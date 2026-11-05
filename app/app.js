@@ -10,7 +10,7 @@ const hav=(a,b)=>{const p=(b[0]-a[0])*D2R,l=(b[1]-a[1])*D2R,h=Math.sin(p/2)**2+M
 let previewH=0;const tNow=()=>new Date(Date.now()+previewH*3600e3);
 // ---------- sheet / tabs ----------
 const sheet=$('sheet'),shead=$('shead');L.DomEvent.disableClickPropagation(sheet);L.DomEvent.disableScrollPropagation(sheet);
-const snapH=()=>{const v=innerHeight;return{min:62,'':v*.45,big:v*.88}};
+const snapH=()=>{const v=innerHeight;return{min:84,'':v*.45,big:v*.88}};
 function setSnap(c){sheet.style.height='';sheet.className=c;setTimeout(()=>map.invalidateSize(),300)}
 let dg=null;
 shead.addEventListener('touchstart',e=>{const t=e.touches[0];dg={y:t.clientY,h:sheet.getBoundingClientRect().height,moved:false,hist:[[t.clientY,e.timeStamp]]}},{passive:true});
@@ -28,15 +28,14 @@ const TABS={};const toast=(t,ms=2500,fn)=>{const e=$('toast');e.textContent=t;e.
 const T=new Set(TK);
 const map=L.map('map',{zoomControl:false,preferCanvas:true,minZoom:6,maxZoom:18,maxBounds:[[3,113],[23,130]],attributionControl:true});
 const ESRI=(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+// Tiles: always request the real zoom from Esri (SW: network-first, runtime cache, falls back to downloaded/bundled/cached).
+// If a tile fails (offline + not cached), draw the best cached parent, scaled, with no smoothing seams.
 const Sat=L.GridLayer.extend({createTile(c,done){const cv=document.createElement('canvas');cv.width=cv.height=256;const g=cv.getContext('2d');
- let z=c.z,x=c.x,y=c.y,dz=0;while(z>=12&&!T.has(z+'/'+x+'/'+y)){x>>=1;y>>=1;z--;dz++}
- const im=new Image();im.crossOrigin='anonymous';
- if(z>=12){im.onload=()=>{const s=256>>dz,ox=(c.x-(x<<dz))*s,oy=(c.y-(y<<dz))*s;g.drawImage(im,ox,oy,s,s,0,0,256,256);done(null,cv)};im.onerror=()=>done(null,cv);im.src='tiles/'+z+'_'+x+'_'+y+'.jpg';return cv}
- // not bundled: try Esri (served from Cache Storage if downloaded); on failure try parent tiles up to 4 levels
- const tryZ=(dz)=>{const z=c.z-dz;if(dz>4||z<0){done(null,cv);return}const x=c.x>>dz,y=c.y>>dz;const i=new Image();i.crossOrigin='anonymous';
-  i.onload=()=>{const s=256>>dz,ox=(c.x-(x<<dz))*s,oy=(c.y-(y<<dz))*s;g.drawImage(i,ox,oy,s,s,0,0,256,256);done(null,cv)};i.onerror=()=>tryZ(dz+1);i.src=ESRI(z,x,y)};
- tryZ(c.z>17?c.z-17:0);return cv}});
-new Sat({maxNativeZoom:18,attribution:'Imagery © Esri, Maxar, Earthstar Geographics · MPAs: Philippine MPA Database · Depth: SRTM15+'}).addTo(map);
+ const tryZ=dz=>{const z=c.z-dz;if(dz>7||z<6){done(null,cv);return}const x=c.x>>dz,y=c.y>>dz,i=new Image();i.crossOrigin='anonymous';
+  i.onload=()=>{const s=256/2**dz,ox=(c.x-(x<<dz))*s,oy=(c.y-(y<<dz))*s;g.imageSmoothingEnabled=dz<3;g.drawImage(i,ox,oy,s,s,-.5,-.5,257,257);done(null,cv)};
+  i.onerror=()=>tryZ(dz+1);i.src=ESRI(z,x,y)};
+ tryZ(c.z>18?c.z-18:0);return cv}});
+new Sat({maxNativeZoom:18,keepBuffer:3,updateWhenIdle:false,attribution:'Imagery © Esri, Maxar, Earthstar Geographics · MPAs: Philippine MPA Database · Depth: SRTM15+'}).addTo(map);
 const G={mpa:L.layerGroup().addTo(map),est:L.layerGroup().addTo(map),nat:L.layerGroup().addTo(map),spots:L.layerGroup().addTo(map),depth:L.layerGroup().addTo(map),dlab:L.layerGroup().addTo(map),log:L.layerGroup().addTo(map),track:L.layerGroup().addTo(map),zones:L.layerGroup().addTo(map),meas:L.layerGroup().addTo(map)};
 const info=h=>L.popup({maxWidth:290}).setLatLng(map.getCenter()).setContent(h).openOn(map);
 // zones used for proximity: {name, poly:[[lat,lon]..]} or {name,c:[lat,lon],r}; kind 'mpa'|'buf'
@@ -138,13 +137,13 @@ let me=null,dot,acc,heading=null,lastWarn='';
 function startGPS(){if(!navigator.geolocation){$('gps').textContent='No GPS';return}$('gps').textContent='GPS…';
  navigator.geolocation.watchPosition(p=>{const{latitude:la,longitude:lo,accuracy:a}=p.coords;me=[la,lo];
   if(!dot){acc=L.circle(me,{radius:a,color:'#3b82f6',weight:1,fillOpacity:.12,interactive:false}).addTo(map);dot=L.marker(me,{interactive:false,icon:L.divIcon({className:'',html:'<div id="medot"></div>',iconSize:[22,22]})}).addTo(map);map.setView(me,16)}
-  acc.setLatLng(me).setRadius(a);dot.setLatLng(me);$('gps').textContent='±'+Math.round(a)+' m';trackPoint(me,a);updateNav()},
+  acc.setLatLng(me).setRadius(a);dot.setLatLng(me);$('gps').textContent='📍 ±'+Math.round(a)+' m';trackPoint(me,a);updateNav();if(!window._s1){window._s1=1;summary()}},
  e=>{$('gps').textContent=e.code==1?'GPS denied':'GPS unavailable'},{enableHighAccuracy:true,maximumAge:3000,timeout:20000})}
 function updateNav(){if(!me)return;const st=zoneStatus(me);const bn=$('banner');let w='';
  if(st.inside.length){w='mpa';bn.className='';bn.textContent='⛔ INSIDE '+st.inside[0]+' — NO TAKE. Leave the area.';bn.style.display='block'}
  else if(st.inBuf.length){w='buf';bn.className='buf';bn.textContent='⚠️ In safety buffer of a protected area. Move away.';bn.style.display='block'}else bn.style.display='none';
  if(w&&w!=lastWarn&&navigator.vibrate)navigator.vibrate(w=='mpa'?[400,150,400,150,400]:[300,150,300]);lastWarn=w;
- if(st.near){const b=bearing(me,st.near.bp);$('nd').textContent=fmtD(st.near.d)+' '+card(b);$('nn').textContent='to '+st.near.name+' (bearing '+Math.round(b)+'°)';$('dist').style.display='';$('dist').textContent=(st.inside.length?'IN MPA':'MPA '+fmtD(st.near.d)+' '+card(b));
+ if(st.near){const b=bearing(me,st.near.bp);$('nd').textContent=fmtD(st.near.d)+' '+card(b);$('nn').textContent='to '+st.near.name+' (bearing '+Math.round(b)+'°)';$('dist').textContent=st.inside.length?'⛔ IN MPA':'⛔ MPA '+fmtD(st.near.d)+' '+card(b);$('dist').classList.toggle('warn',!!st.inside.length||st.near.d<300);
   $('arrow').style.transform=`rotate(${b-(heading||0)}deg)`}else{$('nd').textContent='> 30 km';$('nn').textContent='No mapped protected area within 30 km.'}}
 $('me').onclick=()=>{if(!me)startGPS();else map.setView(me,Math.max(map.getZoom(),16))};
 $('hd').onclick=async()=>{try{if(typeof DeviceOrientationEvent!='undefined'&&DeviceOrientationEvent.requestPermission){const r=await DeviceOrientationEvent.requestPermission();if(r!='granted'){toast('Compass permission denied');return}}
@@ -261,4 +260,9 @@ if('serviceWorker' in navigator){let had=!!navigator.serviceWorker.controller;na
  navigator.serviceWorker.ready.then(()=>$('off').textContent='Offline copy ready.');
  r.addEventListener('updatefound',()=>{const n=r.installing;n&&n.addEventListener('statechange',()=>{if(n.state=='installed'&&navigator.serviceWorker.controller)toast('Update available — tap to reload',0,()=>{n.postMessage('skip')})})});setInterval(()=>r.update(),3600e3)}).catch(()=>{});
  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
+function summary(){const ll=me?L.latLng(me):map.getCenter(),tn=tideAt(ll,new Date());let lo=null;if(tn){const ex=extremes(ll,new Date(),26);lo=ex.find(x=>x.k=='L')}
+ if(tn)$('ttop').textContent='🌊 '+(tn.h>=0?'+':'')+tn.h.toFixed(1)+' m'+(lo?' · low '+hm(lo.t):'');
+ let mp='MPA –';if(me){const st=zoneStatus(me);mp=st.inside.length?'INSIDE MPA':st.near?'MPA '+fmtD(st.near.d)+' '+card(bearing(me,st.near.bp)):'No MPA within 30 km'}else mp='Tap ◎ for GPS';
+ $('sum').textContent=mp+(tn?' · tide '+(tn.h>=0?'+':'')+tn.h.toFixed(2)+' m (MSL)':'')+(lo?' · next low '+hm(lo.t)+' ('+(lo.h>=0?'+':'')+lo.h.toFixed(2)+')':'')}
+setInterval(summary,60000);setTimeout(summary,1500);
 window.__ok=true;
