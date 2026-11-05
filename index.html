@@ -1,74 +1,81 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>Anda spearfishing map v2 (offline)</title><link rel="stylesheet" href="leaflet.css"><link rel="manifest" href="manifest.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#0b2233"><link rel="apple-touch-icon" href="icon-192.png"><style>
-body{margin:0;font:15px/1.4 system-ui,-apple-system,sans-serif;color:#1b1f24;background:#fafafa}
-main{max-width:900px;margin:auto;padding:10px}h1{font-size:19px;margin:4px 0}h2{font-size:17px;margin:20px 0 6px}
-.bar{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}button{border:1px solid #bbb;background:#fff;border-radius:16px;padding:6px 12px;font-size:14px}button.on{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
-#map{height:72vh;border-radius:12px;background:#0b2233}#info{border:1px solid #ccc;border-radius:10px;padding:10px;background:#fff;margin-top:8px}
-table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px solid #ddd;padding:4px 6px;text-align:left}tr.good td{background:#e7f6ea}
-.note{color:#555;font-size:13px}#geo{font-weight:600}
-.lbl{background:none;border:none;box-shadow:none;color:#fff;font-weight:700;font-size:12px;text-shadow:0 0 3px #000,0 0 3px #000}.lbl:before{display:none}
-.est{color:#ffd08a}.warnin{color:#b91c1c}
-@media print{.noprint{display:none}}
-</style></head><body><main>
-<h1>Tondol / Anda spearfishing map</h1><div class="note" id="off"></div>
-<div class="bar noprint"><button id="zA">All Anda</button><button id="zT">Tondol close-up</button><button id="me">Center on me</button><button class="on" data-l="mpa">MPAs</button><button class="on" data-l="est">Estimated</button><button class="on" data-l="spots">Spots</button><button data-l="depth">Depth lines</button></div>
-<div class="note noprint" id="geo">Location: tap “Center on me”.</div>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>Spearfishing map PH v3</title><link rel="stylesheet" href="leaflet.css"><link rel="manifest" href="manifest.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="theme-color" content="#0b1620"><link rel="apple-touch-icon" href="icon-192.png"><style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#0b1620;color:#e6edf3;font:15px/1.4 system-ui,-apple-system,sans-serif}
+#map{position:fixed;inset:0;background:#0b2233}
+.fab{position:fixed;right:10px;z-index:900;display:flex;flex-direction:column;gap:8px;top:calc(env(safe-area-inset-top) + 56px)}
+.fab button,.chip{background:rgba(11,22,32,.85);color:#e6edf3;border:1px solid #2d4152;border-radius:22px;padding:8px 12px;font-size:14px;backdrop-filter:blur(6px)}
+.fab button{width:46px;height:46px;padding:0;font-size:20px}.on{background:#1d4ed8!important;border-color:#3b82f6!important}
+#top{position:fixed;left:8px;right:64px;top:calc(env(safe-area-inset-top) + 8px);z-index:900;display:flex;gap:6px;flex-wrap:wrap}
+#banner{display:none;position:fixed;left:8px;right:8px;top:calc(env(safe-area-inset-top) + 50px);z-index:1001;background:#b91c1c;color:#fff;font-weight:800;text-align:center;padding:14px;border-radius:12px;font-size:18px;box-shadow:0 4px 20px #000a;animation:pl 1s infinite alternate}
+#banner.buf{background:#c2410c}@keyframes pl{to{opacity:.75}}
+#toast{display:none;position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 60px);z-index:1002;background:#16a34a;color:#fff;padding:10px 16px;border-radius:20px;font-weight:600}
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:1000;background:#0f1d29f2;border-top:1px solid #2d4152;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom);transition:height .2s;height:150px;display:flex;flex-direction:column}
+#sheet.big{height:62vh}#sheet.min{height:58px}
+#grab{height:20px;display:flex;justify-content:center;align-items:center}#grab:before{content:"";width:44px;height:5px;border-radius:3px;background:#4b6072}
+#tabs{display:flex;gap:2px;padding:0 6px;overflow-x:auto;flex:none}#tabs button{flex:1;background:none;border:none;color:#8aa0b2;padding:6px 4px;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap}#tabs button.act{color:#fff;border-color:#3b82f6}
+#body{overflow-y:auto;padding:10px 12px;flex:1;-webkit-overflow-scrolling:touch}.pane{display:none}.pane.act{display:block}
+h3{margin:12px 0 6px;font-size:15px}.note{color:#8aa0b2;font-size:12.5px}.big{font-size:26px;font-weight:800}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.btn{background:#1e3346;color:#e6edf3;border:1px solid #2d4152;border-radius:10px;padding:9px 12px;font-size:14px}.btn.p{background:#1d4ed8;border-color:#3b82f6}.btn.r{background:#991b1b}
+input,select,textarea{background:#0b1620;color:#e6edf3;border:1px solid #2d4152;border-radius:8px;padding:8px;font-size:16px;width:100%}
+table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px solid #22384a;padding:4px;text-align:left}
+.card{display:flex;gap:10px;border:1px solid #22384a;border-radius:10px;padding:8px;margin-bottom:8px;background:#0b1620}.card img{width:96px;height:72px;object-fit:cover;border-radius:6px;flex:none}
+.tag{display:inline-block;border-radius:6px;padding:1px 6px;font-size:11px;font-weight:700}.ok{background:#14532d}.warn{background:#854d0e}.no{background:#991b1b}
+#arrow{width:70px;height:70px;transition:transform .2s}
+.lbl{background:none;border:none;box-shadow:none;color:#fff;font-weight:700;font-size:12px;text-shadow:0 0 3px #000,0 0 3px #000}.lbl:before{display:none}.lowz .lbl{display:none}.est{color:#ffd08a}
+.leaflet-control-attribution{font-size:9px;background:#0008!important;color:#ccc}.leaflet-control-attribution a{color:#9cf}.leaflet-bottom{bottom:150px}
+.dl span{display:inline-block;transform:translate(-50%,-50%);white-space:nowrap;font:600 10.5px system-ui;color:#e0f2fe;background:#0b1620b0;border:1px solid #38bdf866;border-radius:6px;padding:0 4px}
+#medot{width:18px;height:18px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 6px #2563eb44;position:relative}#medot:after{content:"";position:absolute;left:3px;top:-12px;border:3px solid transparent;border-bottom:9px solid #2563eb;transform-origin:3px 18px;transform:rotate(var(--h,0deg))}
+input[type=range]{padding:0}
+#days{display:flex;gap:4px;overflow-x:auto;padding-bottom:4px}#days button{flex:none}
+</style></head><body>
 <div id="map"></div>
-<div class="note">Red = published MPA boundary. Orange dashed = ESTIMATED boundary (none published), with a fainter 100 m safety buffer. Depth lines (5/10/20/50 m, optional) from SRTM15+, coarse near shore. Imagery © Esri, Maxar, Earthstar Geographics and the GIS User Community. MPAs: Philippine MPA Database. Times Manila (UTC+8). Built 5 Nov 2026.</div>
-<div id="info">Tap an area or marker for details.</div>
-<h2>Protected areas</h2><table id="mpaT"></table>
-<p class="note">Caniogan MPA (9.8 ha, 2001) has only a point in the database (16.3017, 120.019). Its drawn box is a GUESS: 350 × 280 m (9.8 ha), centred on that point and laid along the outer edge of the reef flat south of the Tondol spit, the way Magsaysay is a rotated rectangle. Stay outside the outer dashed line. “Tondol MPA” duplicates Magsaysay's figures at a wrong spot in Bani, and the Telbang point sits on Cabungan; neither is drawn.</p>
-<h2>Tides, Bolinao, 5–19 Nov 2026</h2><div class="note">Source: tide-forecast.com. Heights above MLLW. Green = slack water in daylight (07:00–16:30); go in about 1 h either side. This is a rule of thumb.</div>
-<table id="tideT"></table>
-<h2>Fish you can realistically spear</h2><table id="fishT"></table>
-<h2>Do not take</h2><ul id="nt"></ul><h2>Food safety</h2><ul id="ca"></ul>
-<h2>Rules</h2><ul><li>Personal freedive spearfishing with a hand spear is legal.</li><li>No take of any kind inside an MPA or sanctuary (RA 10654 Sec 101).</li><li>Compressor fishing is banned in Pangasinan (Provincial Ordinance 107-2003).</li><li>Giant clams are protected.</li></ul>
-<h2>“You are here” on iPhone</h2><p class="note">GPS works without signal. iOS Safari may block location for files opened from the phone. If it says denied or unavailable, open the file from the Files app in Safari and allow location. The rest of the map works without it.</p>
-</main><script src="leaflet.js"></script><script src="data.js"></script><script>
-const T=new Set(TK);
-const map=L.map('map',{zoomSnap:1,minZoom:12,maxZoom:18,maxBounds:[[16.18,119.88],[16.46,120.14]]});
-const Sat=L.GridLayer.extend({createTile(c,done){const cv=document.createElement('canvas');cv.width=cv.height=256;const g=cv.getContext('2d');
- let z=c.z,x=c.x,y=c.y,dz=0;while(z>=12&&!T.has(z+'/'+x+'/'+y)){x>>=1;y>>=1;z--;dz++}
- if(z<12){setTimeout(()=>done(null,cv));return cv}
- const im=new Image();im.onload=()=>{const s=256>>dz,ox=(c.x-(x<<dz))*s,oy=(c.y-(y<<dz))*s;g.imageSmoothingEnabled=true;g.drawImage(im,ox,oy,s,s,0,0,256,256);done(null,cv)};im.src='tiles/'+z+'_'+x+'_'+y+'.jpg';return cv}});
-new Sat({maxNativeZoom:18,attribution:'Depth lines (5/10/20/50 m, optional) from SRTM15+, coarse near shore. Imagery © Esri, Maxar, Earthstar Geographics'}).addTo(map);
-const G={mpa:L.layerGroup().addTo(map),est:L.layerGroup().addTo(map),spots:L.layerGroup().addTo(map),depth:L.layerGroup()};
-CONT.forEach(([d,pl])=>L.polyline(pl,{color:'#bfe3ff',weight:1,opacity:.55,dashArray:d>=20?'':'3 4',interactive:false}).bindTooltip(d+' m',{permanent:false}).addTo(G.depth));
-const info=document.getElementById('info');
-const show=h=>{info.innerHTML=h;info.scrollIntoView({behavior:'smooth',block:'nearest'})};
-const draw=[];
-D.mpas.forEach(m=>{if(m.id==1292||m.id==871)return;
- if(m.ll.length){m.ll.forEach(p=>{const ll=p.map(q=>[q[1],q[0]]);draw.push({m,ll,est:false});
-  L.polygon(ll,{color:'#fff',weight:2,fillColor:'#e3342f',fillOpacity:.38}).bindTooltip(m.name,{permanent:true,direction:'center',className:'lbl'}).on('click',()=>show(`<b>${m.name}</b><br>${m.muni}${m.brgy?', '+m.brgy:''} · ${m.ha} ha · est. ${m.year}${m.id==455?' · Anda Municipal Order 01-2001':''}<br>Published boundary corners (lat, lon): ${p.slice(0,-1).map(q=>q[1].toFixed(5)+', '+q[0].toFixed(5)).join(' | ')}<br><span class="note">Source: mpadatabase.netlify.app/datalist/${m.id}</span>`)).addTo(G.mpa)})}});
-const can=EST.can,buf=EST.buf;draw.push({m:{name:'Caniogan MPA (ESTIMATED)'},ll:can,est:true});
-const cInfo=`<b>Caniogan MPA: ESTIMATED boundary (not published)</b><br>Anda · 9.8 ha · est. 2001. The database has only a point (16.3017, 120.019) and no boundary anywhere I could find.<br>The guess is a 350 × 280 m box (9.8 ha) centred on that point and turned to follow the outer edge of the reef flat south of the Tondol spit, where a sanctuary would usually sit. Anda's other MPAs are rotated rectangles too. Corners: ${can.map(p=>p[0]+', '+p[1]).join(' | ')}.<br>The fainter outer line adds about 100 m as a safety buffer. Stay outside it.`;
-L.polygon(buf,{color:'#ffb347',weight:1.5,dashArray:'4 6',fill:false,opacity:.7}).on('click',()=>show(cInfo)).addTo(G.est);
-L.polygon(can,{color:'#ff8c00',weight:3,dashArray:'8 6',fillColor:'#ff8c00',fillOpacity:.25}).bindTooltip('Caniogan MPA<br>ESTIMATED boundary<br>(not published)',{permanent:true,direction:'bottom',offset:[0,30],className:'lbl est'}).on('click',()=>show(cInfo)).addTo(G.est);
-const vic=D.mpas.find(m=>m.id==1027);
-L.circle([vic.lat,vic.lon],{radius:124,color:'#ff8c00',dashArray:'8 6',weight:2,fillOpacity:.2}).bindTooltip('Victory MPA, ESTIMATED',{permanent:true,direction:'right',className:'lbl est'}).on('click',()=>show(`<b>Victory MPA, Bolinao: ESTIMATED</b><br>4.8 ha, 2002. Point only (${vic.lat}, ${vic.lon}). Drawn as a 4.8 ha circle around the point because the imagery shows no clear reef patch to align a box to. A guess only.`)).addTo(G.est);
-draw.push({m:{name:'Victory MPA (ESTIMATED)'},circle:[vic.lat,vic.lon,124]});
-const pin=(ll,c,label,html)=>L.circleMarker(ll,{radius:8,color:'#fff',weight:2,fillColor:c,fillOpacity:1}).bindTooltip(label,{permanent:true,direction:'left',className:'lbl'}).on('click',()=>show(html)).addTo(G.spots);
-pin([16.305371,120.013252],'#d946ef','HIPSA II','<b>HIPSA Resort II</b><br>16.30537, 120.01325. Location from a web place listing, not verified on the ground.');
-E.spots.forEach(s=>pin([s.lat,s.lon],'#22c55e','Suggested entry',`<b>${s.name}</b><br>${s.lat}, ${s.lon}<br>${s.why}`));
-const presets={all:()=>map.fitBounds([[16.255,119.94],[16.40,120.07]]),t:()=>map.fitBounds([[16.296,120.008],[16.318,120.035]])};
-document.getElementById('zA').onclick=presets.all;document.getElementById('zT').onclick=presets.t;presets.t();
-document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>{b.classList.toggle('on');b.classList.contains('on')?G[b.dataset.l].addTo(map):map.removeLayer(G[b.dataset.l])});
-// tables
-document.getElementById('mpaT').innerHTML='<tr><th>Name</th><th>ha</th><th>Year</th><th>Boundary</th></tr>'+D.mpas.filter(m=>m.id!=1292).map(m=>`<tr><td>${m.name} (${m.muni})</td><td>${m.ha}</td><td>${m.year}</td><td>${m.ll.length?'published':(m.id==990||m.id==1027?'<b>estimated</b>':'point only')}</td></tr>`).join('');
-document.getElementById('tideT').innerHTML='<tr><th>Date</th><th>Time</th><th>Tide</th><th>Height</th></tr>'+D.tides.map(t=>`<tr class="${t.good?'good':''}"><td>${t.iso.slice(5,10)} ${t.d.slice(0,3)}</td><td>${t.hm}</td><td>${t.k=='H'?'High':'Low'}</td><td>${t.h} m</td></tr>`).join('');
-document.getElementById('fishT').innerHTML='<tr><th>Fish</th><th>Notes</th></tr>'+E.fish.map(f=>`<tr><td>${f[0]}<br><i>${f[1]}</i></td><td>${f[2]}</td></tr>`).join('');
-document.getElementById('nt').innerHTML=E.notake.map(s=>`<li>${s}</li>`).join('');document.getElementById('ca').innerHTML=E.caution.map(s=>`<li>${s}</li>`).join('');
-// GPS
-const geo=document.getElementById('geo');let dot,acc,me=null,watching=false;
-function inPoly(la,lo,p){let c=false;for(let i=0,j=p.length-1;i<p.length;j=i++){const[yi,xi]=p[i],[yj,xj]=p[j];if((yi>la)!=(yj>la)&&lo<(xj-xi)*(la-yi)/(yj-yi)+xi)c=!c}return c}
-const inBuf=(la,lo)=>inPoly(la,lo,buf);
-function start(){if(!navigator.geolocation){geo.textContent='Location not available in this browser.';return}watching=true;
- navigator.geolocation.watchPosition(p=>{const{latitude:la,longitude:lo,accuracy:a}=p.coords;me=[la,lo];
-  if(!dot){acc=L.circle(me,{radius:a,color:'#3b82f6',weight:1,fillOpacity:.15}).addTo(map);dot=L.circleMarker(me,{radius:7,color:'#fff',weight:2,fillColor:'#2563eb',fillOpacity:1}).addTo(map);map.setView(me,16)}
-  acc.setLatLng(me).setRadius(a);dot.setLatLng(me);
-  const hit=draw.filter(d=>d.ll?inPoly(la,lo,d.ll):map.distance(me,[d.circle[0],d.circle[1]])<d.circle[2]).map(d=>d.m.name);
-  geo.innerHTML=`You: ${la.toFixed(5)}, ${lo.toFixed(5)} (±${Math.round(a)} m). `+(hit.length?`<span class="warnin">INSIDE ${hit.join(', ')}: no take!</span>`:inBuf(la,lo)?'<span class="warnin">Inside the Caniogan safety buffer. Move away.</span>':'Not inside any marked MPA.')},
- e=>{geo.textContent='Location '+(e.code==1?'permission denied':'unavailable')+'. The map still works; see the iPhone note below.'},{enableHighAccuracy:true,maximumAge:5000,timeout:20000})}
-document.getElementById('me').onclick=()=>{if(!watching)start();else if(me)map.setView(me,16)};
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').then(r=>{document.getElementById('off').textContent='Offline copy: saving…';navigator.serviceWorker.ready.then(()=>document.getElementById('off').textContent='Offline copy ready. Add to Home Screen (Share → Add to Home Screen).')}).catch(()=>{});
-</script></body></html>
+<div id="top"><span class="chip" id="gps">GPS off</span><span class="chip" id="dist" style="display:none"></span></div>
+<div class="fab"><button id="me" title="Center on me">◎</button><button id="hd" title="Compass">🧭</button><button id="ms" title="Measure">📏</button><button id="tk" title="Swim track">〰</button><button id="lay" title="Layers">▤</button></div>
+<div id="banner"></div><div id="toast"></div>
+<div id="sheet"><div id="grab"></div>
+<div id="tabs"><button data-t="nav" class="act">Nav</button><button data-t="tide">Tides</button><button data-t="spots">Spots</button><button data-t="areas">Areas</button><button data-t="log">Log</button><button data-t="dive">Dive</button><button data-t="fish">Fish</button><button data-t="info">Info</button></div>
+<div id="body">
+<div class="pane act" id="p-nav">
+ <div class="row"><svg id="arrow" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="#0b1620" stroke="#2d4152" stroke-width="3"/><path d="M50 8 L64 58 L50 48 L36 58Z" fill="#f87171"/></svg>
+ <div><div class="big" id="nd">–</div><div id="nn" class="note">Tap ◎ to start GPS. Distance and direction to the nearest protected boundary show here.</div></div></div>
+ <div class="note" id="hdn">Arrow points to the nearest protected boundary. Tap 🧭 to turn it with the phone (compass). Without compass, 0° = north up.</div>
+ <div class="note" id="mpn" style="margin-top:6px"></div>
+ <div class="row" style="margin-top:8px"><button class="btn" id="zT">Tondol</button><button class="btn" id="zA">All Anda</button><button class="btn" id="zP">Whole PH</button></div>
+ <div class="row" style="margin-top:6px"><span class="note" id="tkI"></span><button class="btn" id="tkC">Clear swim track</button></div>
+ <h3>Weather &amp; sea</h3><div id="wx" class="note"></div><button class="btn" id="wxR" style="margin-top:6px">Refresh forecast (needs signal)</button>
+</div>
+<div class="pane" id="p-tide">
+ <div id="days"></div><svg id="tc" viewBox="0 0 360 150" style="width:100%;height:auto"></svg>
+ <div class="row" style="margin:4px 0"><span class="note">Preview time</span><input type="range" id="slider" min="0" max="72" step="1" value="0" style="flex:1"><span class="note" id="slv">now</span></div>
+ <div id="tnow" style="font-weight:700"></div><div id="tsun" class="note"></div><div id="tlist" class="note"></div>
+ <div class="note" style="margin-top:6px">All heights are relative to mean sea level (MSL), the same datum as the depth lines (SRTM15+ ≈ MSL). Near Anda (≤40 km), 5–19 Nov: tide-forecast.com Bolinao highs/lows (published vs chart datum), shifted to MSL by subtracting their mean (approx. offset), and joined by cosine interpolation. Elsewhere/other dates: offline harmonic prediction (25 constituents with nodal corrections) fitted by me to UHSLC hourly sea-level records of the nearest station (Manila, Subic, Lubang, Currimao, Legaspi, Davao, Cebu, Puerto Princesa, Jolo). Typical error ±10 cm; weather surges not included. The slider shifts the time used for contour labels and tap-depths. Green = good window: within 1.5 h of a high or low (slack) in daylight. Yellow lines = sunrise/sunset. Sunrise/sunset computed for 16.31 N 120.02 E.</div>
+</div>
+<div class="pane" id="p-spots"><h3>Best spots now</h3><div class="note">Ranked by tide window, cached wind/waves and distance from you. Green pins = shore spots from spearo.app (area points, check locally). Lime circles = suggested zones (ESTIMATED from coarse depth: 3–15 m near a drop-off, near shore, outside MPAs + 300 m). Grey = inside a protected area, excluded.</div><div id="best" class="note">Loading…</div></div>
+<div class="pane" id="p-areas"><h3>Download areas for offline</h3><div class="note">Satellite tiles go into the phone's storage (personal use of Esri imagery, modest sizes). The Anda core is bundled. Download with Wi-Fi/signal; forecast is cached at the same time.</div><div id="dlP" class="note" style="display:none;color:#7dd3fc;font-weight:600"></div><div id="preL"></div>
+<h3>Custom area</h3><button class="btn" id="drawR">Draw rectangle on map</button><div id="custQ" class="note" style="margin-top:6px"></div><div id="custL"></div></div>
+<div class="pane" id="p-log">
+ <div class="row"><button class="btn p" id="addMe">+ Save at my position</button><button class="btn" id="addTap">+ Tap map to place</button></div>
+ <div id="form" style="display:none;margin-top:8px"><input id="fN" placeholder="Name (e.g. Rock ledge)"><select id="fS" style="margin-top:6px"></select><textarea id="fT" rows="2" placeholder="Note" style="margin-top:6px"></textarea><div class="row" style="margin-top:6px"><button class="btn p" id="fOk">Save</button><button class="btn" id="fX">Cancel</button><span class="note" id="fC"></span></div></div>
+ <h3>Saved</h3><div id="logL" class="note">Nothing saved yet.</div>
+ <div class="row" style="margin-top:8px"><button class="btn" id="exG">Export GPX</button><button class="btn" id="exJ">Export JSON</button></div>
+ <div class="note">Stored only on this phone. Export includes spots and the swim track.</div>
+</div>
+<div class="pane" id="p-dive">
+ <div class="row"><div><div class="note" id="dS">Ready</div><div class="big" id="dT" style="font-size:44px">0:00</div></div></div>
+ <div class="row"><button class="btn p" id="dGo" style="font-size:18px;padding:14px 22px">Dive ↓</button><button class="btn" id="dSurf" style="font-size:18px;padding:14px 22px">Surface ↑</button><button class="btn r" id="dRst">Reset</button></div>
+ <div id="dInfo" class="note" style="margin-top:8px"></div><div id="dHist" class="note"></div>
+ <h3>Rules</h3><ul class="note"><li>Rest on the surface at least 2× your dive time (more after deep or long dives). The timer buzzes when it's OK.</li><li>Never hyperventilate before a dive.</li><li><b>Buddy check:</b> one up, one down. Watch your buddy for 30 s after they surface. Tell someone on shore when you'll be back.</li></ul>
+</div>
+<div class="pane" id="p-fish"><div id="fishL"></div><div class="note">Photos: Wikimedia Commons (licence and author under each). Some photos show a related species of the same family.</div></div>
+<div class="pane" id="p-info">
+ <h3>Rules</h3><ul class="note"><li>Personal freedive spearfishing with a hand spear is legal.</li><li>No take of any kind inside an MPA or sanctuary (RA 10654 Sec 101).</li><li>Compressor fishing is banned in Pangasinan (Provincial Ordinance 107-2003).</li><li>Giant clams are protected.</li></ul>
+ <h3>National rules</h3><ul class="note"><li>RA 8550 as amended by RA 10654: no take in MPAs/sanctuaries (Sec 101); destructive methods banned (Sec 97); superlights at night banned in municipal waters (Sec 98).</li><li>Spears are "active gear": each LGU may ban or zone spearfishing in its municipal waters (0–15 km). Ask the municipal agriculture/fisheries office or barangay.</li><li>NIPAS sites (Tubbataha, Apo Reef, Hundred Islands …) are managed by DENR/PAMB; strict-protection zones are no-take.</li><li>Pangasinan: Provincial Ordinance 107-2003 bans compressor fishing.</li><li>Personal breath-hold spearfishing needs no national licence; don't sell the catch.</li></ul>
+<h3>Emergency</h3><ul class="note"><li><b>911</b> national emergency</li><li>Philippine Coast Guard Command Center: <a style="color:#7dd3fc" href="tel:+63285273877">(02) 8527-3877</a>, <a style="color:#7dd3fc" href="tel:+639662179610">0966-217-9610</a>, <a style="color:#7dd3fc" href="tel:+639692174123">0969-217-4123</a> (coastguard.gov.ph/contact-us)</li><li>Philippine Red Cross: <b>143</b></li><li>Venomous sting (stonefish/lionfish): hot water as hot as tolerable (~45 °C) for 30–90 min, then hospital.</li></ul>
+<h3>Do not take</h3><ul id="nt" class="note"></ul><h3>Food safety</h3><ul id="ca" class="note"></ul>
+ <h3>Protected areas</h3><table id="mpaT"></table>
+ <p class="note">Caniogan MPA (9.8 ha, 2001) has only a point in the database (16.3017, 120.019). Its drawn box is a GUESS: 350 × 280 m, centred on that point along the outer reef edge south of the Tondol spit. Stay outside the outer dashed line. Red = published boundary. Orange dashed = ESTIMATED.</p>
+ <div id="info" class="note"></div>
+ <p class="note">National MPAs: 1,349 sites from the Philippine MPA Database (scraped 5 Nov 2026): 731 with published boundaries (red), 477 without boundary drawn as ESTIMATED circles from the official core area (orange dashed + 100 m buffer), 141 large/unknown sites as purple points. 490 entries without coordinates are not shown. Spots: spearo.app. Tide stations: UHSLC (University of Hawaii Sea Level Center). Weather: Open-Meteo.</p><p class="note">Imagery © Esri, Maxar, Earthstar Geographics. MPAs: Philippine MPA Database. Depth lines: SRTM15+, coarse near shore. Times Manila (UTC+8). v3, 5 Nov 2026.</p><p class="note" id="off"></p>
+</div>
+</div></div>
+<script src="leaflet.js"></script><script src="data.js"></script><script src="fish.js"></script><script src="app.js"></script></body></html>
