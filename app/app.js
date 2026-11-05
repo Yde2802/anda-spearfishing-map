@@ -13,23 +13,28 @@ const sheet=$('sheet'),shead=$('shead');L.DomEvent.disableClickPropagation(sheet
 const sab=()=>{const p=document.createElement('div');p.style.cssText='position:fixed;padding-bottom:env(safe-area-inset-bottom);visibility:hidden';document.body.appendChild(p);const v=parseFloat(getComputedStyle(p).paddingBottom)||0;p.remove();return v};
 const snapH=()=>{const v=innerHeight,tb=$('top').getBoundingClientRect().bottom,sb=sab(),min=84+sb,big=Math.max(min+100,v-tb-12);return{min,'':Math.min(Math.max(v*.45,min+120),big),big}};
 function setSnap(c){const H=snapH();sheet.className=c;sheet.style.height=H[c]+'px';setTimeout(()=>map.invalidateSize(),300)}
-addEventListener('resize',()=>setSnap(sheet.className));
+let lastIH=innerHeight;addEventListener('resize',()=>{if(dg||Math.abs(innerHeight-lastIH)<40)return;lastIH=innerHeight;setSnap(sheet.className)});
+// pure: pick snap from final height h (px), velocity v (px/ms, + = up) and snap heights H
+function pickSnap(h,v,H){const order=['min','','big'];const near=order.reduce((p,k)=>Math.abs(H[k]-h)<Math.abs(H[p]-h)?k:p,'min');
+ if(Math.abs(v)<.35)return near;if(v>0){const up=order.find(k=>H[k]>h+30);return up===undefined?'big':up}const dn=order.slice().reverse().find(k=>H[k]<h-30);return dn===undefined?'min':dn}
+window.pickSnap=pickSnap;
 let dg=null;const sbody=$('body');
-function dStart(e,fromBody){const t=e.touches[0];dg={y:t.clientY,h:sheet.getBoundingClientRect().height,moved:false,body:fromBody,hist:[[t.clientY,e.timeStamp]]}}
+function dStart(e,fromBody){const t=e.touches[0],n=performance.now();dg={y:t.clientY,ly:t.clientY,h:sheet.getBoundingClientRect().height,cur:sheet.getBoundingClientRect().height,moved:false,body:fromBody,hist:[[t.clientY,n]]}}
 function dMove(e){if(!dg)return;const t=e.touches[0],dy=dg.y-t.clientY;
- if(dg.body&&!dg.moved){if(Math.abs(dy)<8)return;if(dy>0||sbody.scrollTop>0){dg=null;return}}// content: only a downward swipe at scrollTop 0 drags the sheet
- if(!dg.moved&&Math.abs(dy)<6)return;dg.moved=true;e.preventDefault();sheet.classList.add('drag');
- const H=snapH();let h=dg.h+dy;if(h>H.big)h=H.big+(h-H.big)*.25;if(h<H.min)h=H.min-(H.min-h)*.25;sheet.style.height=h+'px';dg.hist.push([t.clientY,e.timeStamp]);if(dg.hist.length>5)dg.hist.shift()}
-function dEnd(e){if(!dg)return;const d=dg;dg=null;sheet.classList.remove('drag');if(!d.moved)return;e.preventDefault();
- const h=sheet.getBoundingClientRect().height,H=snapH(),a=d.hist[0],b=d.hist[d.hist.length-1],v=(a[0]-b[0])/Math.max(1,b[1]-a[1]);
- const order=['min','','big'];let c;if(d.body&&h<H[sheet.className]-30)c='min';else if(Math.abs(v)>.5){const cur=order.reduce((p,k)=>Math.abs(H[k]-h)<Math.abs(H[p]-h)?k:p,'min');let i=order.indexOf(cur);if(v>0&&H[cur]<=h)i++;if(v<0&&H[cur]>=h)i--;c=order[Math.max(0,Math.min(2,i))]}
- else c=order.reduce((p,k)=>Math.abs(H[k]-h)<Math.abs(H[p]-h)?k:p,'min');setSnap(c)}
+ if(dg.body&&!dg.moved){if(Math.abs(dy)<8)return;if(dy>0||sbody.scrollTop>0){dg=null;return}}
+ if(!dg.moved&&Math.abs(dy)<6)return;dg.moved=true;if(e.cancelable)e.preventDefault();sheet.classList.add('drag');
+ const H=snapH();let h=dg.h+dy;if(h>H.big)h=H.big+(h-H.big)*.25;if(h<H.min)h=H.min-(H.min-h)*.25;dg.cur=h;dg.ly=t.clientY;sheet.style.height=h+'px';
+ const n=performance.now();dg.hist.push([t.clientY,n]);while(dg.hist.length>2&&n-dg.hist[0][1]>80)dg.hist.shift()}
+let dragEndT=0;function dEnd(e){if(!dg)return;const d=dg;dg=null;sheet.classList.remove('drag');if(!d.moved)return;dragEndT=performance.now();if(e&&e.cancelable)e.preventDefault();
+ const H=snapH(),n=performance.now();const a=d.hist[0],b=d.hist[d.hist.length-1];const v=(n-b[1]>100||b[1]-a[1]<1)?0:(a[0]-b[0])/(b[1]-a[1]);
+ let c=pickSnap(d.cur,v,H);if(d.body&&d.cur<H[sheet.className]-30)c='min';setSnap(c)}
 shead.addEventListener('touchstart',e=>dStart(e,false),{passive:true});sbody.addEventListener('touchstart',e=>dStart(e,true),{passive:true});
-[shead,sbody].forEach(el=>{el.addEventListener('touchmove',dMove,{passive:false});el.addEventListener('touchend',dEnd,{passive:false});el.addEventListener('touchcancel',()=>{if(dg){dg=null;sheet.classList.remove('drag');setSnap(sheet.className)}})});
-$('shx').onclick=e=>{e.stopPropagation();setSnap(sheet.className=='min'?'':'min')};
+[shead,sbody].forEach(el=>{el.addEventListener('touchmove',dMove,{passive:false});el.addEventListener('touchend',dEnd,{passive:false});el.addEventListener('touchcancel',dEnd,{passive:false})});
+$('shx').onclick=e=>{e.stopPropagation();if(performance.now()-dragEndT<500)return;setSnap(sheet.className=='min'?'':'min')};
 setTimeout(()=>setSnap(''),0);
-$('grab').onclick=()=>setSnap(sheet.className=='min'?'':sheet.className==''?'big':'min');
-document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{if(b.classList.contains('act')&&sheet.className!='min'){setSnap('min');return}document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+b.dataset.t).classList.add('act');if(sheet.className=='min')setSnap('');(TABS[b.dataset.t]||(()=>{}))()});
+$('grab').onclick=()=>performance.now()-dragEndT<500?0:setSnap(sheet.className=='min'?'':sheet.className==''?'big':'min');
+function showTab(t){const b=document.querySelector('#tabs [data-t='+t+']');document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+t).classList.add('act');if(sheet.className=='min')setSnap('');(TABS[t]||(()=>{}))()}
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{if(performance.now()-dragEndT<500)return;if(b.classList.contains('act')&&sheet.className!='min'){setSnap('min');return}document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+b.dataset.t).classList.add('act');if(sheet.className=='min')setSnap('');(TABS[b.dataset.t]||(()=>{}))()});
 const TABS={};const toast=(t,ms=2500,fn)=>{const e=$('toast');e.textContent=t;e.style.display='block';e.onclick=fn||null;clearTimeout(e._t);if(ms)e._t=setTimeout(()=>e.style.display='none',ms)};
 // ---------- map ----------
 const T=new Set(TK);
@@ -138,7 +143,7 @@ map.on('click',e=>{const ll=e.latlng;if(mode=='measure')return measureClick(ll);
  if(d&&d.z<0){const c=-d.z,tn=tideAt(ll,tNow()),ex=extremes(ll,tNow(),26),lo=ex.find(x=>x.k=='L'),hi=ex.find(x=>x.k=='H');
   h+=`Charted depth ≈ <b>${c} m</b> (SRTM15+, ~MSL, 450 m cells, coarse near shore)`;if(tn)h+=`<br>${previewH?'At '+hm(tNow()):'Now'}: <b>${(c+tn.h).toFixed(1)} m</b>`+(lo?`<br>Next low ${hm(lo.t)}: ${(c+lo.h).toFixed(1)} m`:'')+(hi?`<br>Next high ${hm(hi.t)}: ${(c+hi.h).toFixed(1)} m`:'')+`<br><span class="note">Tide: ${tn.src}</span>`}
  else if(d)h+='Land/intertidal in depth grid (coarse).';else h+='<span class="note">No detailed depth grid here (only preset regions).</span>';
- L.popup({maxWidth:290}).setLatLng(ll).setContent(h).openOn(map)});
+ L.popup({maxWidth:290,autoPanPaddingTopLeft:L.point(10,$('top').getBoundingClientRect().bottom+12),autoPanPaddingBottomRight:L.point(70,sheet.getBoundingClientRect().height+12)}).setLatLng(ll).setContent(h).openOn(map)});
 // ---------- GPS & nav ----------
 let me=null,dot,acc,heading=null,lastWarn='';
 function startGPS(){if(!navigator.geolocation){$('gps').textContent='No GPS';return}$('gps').textContent='GPS…';
@@ -146,7 +151,7 @@ function startGPS(){if(!navigator.geolocation){$('gps').textContent='No GPS';ret
   if(!dot){acc=L.circle(me,{radius:a,color:'#3b82f6',weight:1,fillOpacity:.12,interactive:false}).addTo(map);dot=L.marker(me,{interactive:false,icon:L.divIcon({className:'',html:'<div id="medot"></div>',iconSize:[22,22]})}).addTo(map);map.setView(me,16)}
   acc.setLatLng(me).setRadius(a);dot.setLatLng(me);$('gps').innerHTML='<svg width="11" height="11" viewBox="0 0 16 16" style="vertical-align:-1px"><circle cx="8" cy="8" r="3" fill="#60a5fa"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#60a5fa" stroke-width="1.5"/></svg> ±'+Math.round(a)+' m';trackPoint(me,a);updateNav();if(!window._s1){window._s1=1;summary()}},
  e=>{$('gps').textContent=e.code==1?'GPS denied':'GPS unavailable'},{enableHighAccuracy:true,maximumAge:3000,timeout:20000})}
-function updateNav(){if(!me)return;const st=zoneStatus(me);const bn=$('banner');let w='';
+function updateNav(){if(!me)return;try{summary()}catch(e){}const st=zoneStatus(me);const bn=$('banner');let w='';
  if(st.inside.length){w='mpa';bn.className='';bn.textContent='⛔ INSIDE '+st.inside[0]+' — NO TAKE. Leave the area.';bn.style.display='block'}
  else if(st.inBuf.length){w='buf';bn.className='buf';bn.textContent='⚠️ In safety buffer of a protected area. Move away.';bn.style.display='block'}else bn.style.display='none';
  if(w&&w!=lastWarn&&navigator.vibrate)navigator.vibrate(w=='mpa'?[400,150,400,150,400]:[300,150,300]);lastWarn=w;
@@ -169,7 +174,7 @@ $('tkC').onclick=()=>{if(confirm('Clear swim track?')){trk=[];LS.set('anda_track
 // ---------- log ----------
 let LOG=LS.get('anda_log',[]),pend=null;
 $('fS').innerHTML='<option value="">(no catch / spot only)</option>'+FISH.filter(f=>f.f!='no').map(f=>`<option>${esc(f.n)}</option>`).join('');
-function openForm(ll){pend=ll;$('form').style.display='block';$('fC').textContent=ll[0].toFixed(5)+', '+ll[1].toFixed(5);$('fN').value='';$('fT').value='';$('fS').value='';document.querySelector('[data-t=log]').click()}
+function openForm(ll){pend=ll;$('form').style.display='block';$('fC').textContent=ll[0].toFixed(5)+', '+ll[1].toFixed(5);$('fN').value='';$('fT').value='';$('fS').value='';showTab('log')}
 $('addMe').onclick=()=>{if(!me){startGPS();toast('Waiting for GPS…');return}openForm(me)};
 $('addTap').onclick=()=>{mode='log';$('addTap').classList.add('on');setSnap('min');toast('Tap the map where the spot is')};
 $('fX').onclick=()=>{$('form').style.display='none';pend=null};
@@ -242,7 +247,7 @@ $('drawR').onclick=()=>{drawing=true;setSnap('min');toast('Drag on the map to dr
 map.on('mousedown',e=>{if(!drawing)return;p0=e.latlng;rect&&map.removeLayer(rect);rect=L.rectangle([p0,p0],{color:'#facc15'}).addTo(map)});
 map.on('mousemove',e=>{if(drawing&&p0)rect.setBounds([p0,e.latlng])});
 map.on('mouseup',e=>{if(!drawing||!p0)return;drawing=false;map.dragging.enable();const bb=rect.getBounds(),b=[bb.getSouth(),bb.getWest(),bb.getNorth(),bb.getEast()];p0=null;const z=zmaxFor(b),n=tileList(b,z).length;
- setSnap('');document.querySelector('[data-t=areas]').click();$('custQ').innerHTML=`Selected area: ${n} tiles (z10–${z}), ~${mb(n)} MB${n*16/1024>150?' <b style="color:#fbbf24">large!</b>':''} <button class="btn p" id="custGo">Download</button>`;
+ setSnap('');showTab('areas');$('custQ').innerHTML=`Selected area: ${n} tiles (z10–${z}), ~${mb(n)} MB${n*16/1024>150?' <b style="color:#fbbf24">large!</b>':''} <button class="btn p" id="custGo">Download</button>`;
  $('custGo').onclick=()=>{map.removeLayer(rect);download('c'+Date.now(),'Custom '+b.map(x=>x.toFixed(2)).join(','),b)}});
 async function fetchWx(key,ll){try{const q=`latitude=${ll[0].toFixed(3)}&longitude=${ll[1].toFixed(3)}&timezone=Asia%2FManila&forecast_days=7`;
  const [h,m]=await Promise.all([fetch('https://api.open-meteo.com/v1/forecast?'+q+'&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation').then(r=>r.json()),fetch('https://marine-api.open-meteo.com/v1/marine?'+q+'&hourly=wave_height,swell_wave_height,swell_wave_direction,swell_wave_period').then(r=>r.json()).catch(()=>null)]);
@@ -263,7 +268,7 @@ $('zT').onclick=()=>{map.fitBounds([[16.296,120.008],[16.318,120.035]]);setSnap(
 map.on('zoomend',()=>document.body.classList.toggle('lowz',map.getZoom()<12));map.fitBounds([[16.296,120.008],[16.318,120.035]]);
 setInterval(()=>{if(!previewH&&$('p-tide').classList.contains('act'))TABS.tide();if(me)updateNav()},60000);
 // ---------- service worker + update toast ----------
-const APPV='3.4';$('off').insertAdjacentHTML('afterend','<p class="note">App version '+APPV+'</p>');
+const APPV='3.5';$('off').insertAdjacentHTML('afterend','<p class="note">App version '+APPV+'</p>');
 let REG=null,reloading=false,updShown=false;
 function doReload(){if(reloading)return;reloading=true;location.reload()}
 function showUpdate(){if(updShown)return;updShown=true;toast('⬆️ Update available — tap to reload',0,async()=>{toast('Updating…',0);setTimeout(doReload,3000);
