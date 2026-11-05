@@ -1,5 +1,19 @@
 'use strict';
 const $=id=>document.getElementById(id),LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+
+// Local-first records: {id, updated_at, deleted_at, ...} — ready for Supabase sync later
+const uuid=()=>crypto.randomUUID?crypto.randomUUID():('xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c=='x'?r:(r&0x3|0x8)).toString(16)}));
+const nowIso=()=>new Date().toISOString();
+function loadRecs(key){return LS.get(key,[]).filter(r=>!r.deleted_at)}
+function upsertRec(key,rec){const all=LS.get(key,[]);rec.updated_at=nowIso();if(!rec.id)rec.id=uuid();rec.deleted_at=rec.deleted_at||null;const i=all.findIndex(x=>x.id===rec.id);if(i>=0)all[i]=rec;else all.push(rec);LS.set(key,all);return rec}
+function softDel(key,id){const all=LS.get(key,[]);const r=all.find(x=>x.id===id);if(r){r.deleted_at=nowIso();r.updated_at=r.deleted_at;LS.set(key,all)}}
+const SETTINGS_KEY='ph_settings',FAV_KEY='ph_favs',PIN_KEY='ph_pins',LAST_KEY='ph_last';
+const defaultSettings=()=>({access:{beach:true,shore:true,boat:false},maxSwim:400,hideMpa:true,units:'m'});
+function getSettings(){return Object.assign(defaultSettings(),LS.get(SETTINGS_KEY,{}))}
+function setSettings(s){LS.set(SETTINGS_KEY,s)}
+const ACC_ICON={beach:'🏖',shore:'🪨',boat:'🚤'};
+function fmtSwim(m){const s=getSettings();return s.units==='ft'?Math.round(m*3.281)+' ft':Math.round(m)+' m'}
+function gmaps(ll){return `https://www.google.com/maps/dir/?api=1&destination=${ll[0]},${ll[1]}&travelmode=driving`}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pad=n=>String(n).padStart(2,'0'),hm=d=>pad(d.getHours())+':'+pad(d.getMinutes());
 const fmtD=m=>m<1000?Math.round(m)+' m':(m/1000).toFixed(m<10000?2:1)+' km';
@@ -35,7 +49,7 @@ setTimeout(()=>setSnap(''),0);
 $('grab').onclick=()=>performance.now()-dragEndT<500?0:setSnap(sheet.className=='min'?'':sheet.className==''?'big':'min');
 function showTab(t){const b=document.querySelector('#tabs [data-t='+t+']');document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+t).classList.add('act');if(sheet.className=='min')setSnap('');(TABS[t]||(()=>{}))()}
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{if(performance.now()-dragEndT<500)return;if(b.classList.contains('act')&&sheet.className!='min'){setSnap('min');return}document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+b.dataset.t).classList.add('act');if(sheet.className=='min')setSnap('');(TABS[b.dataset.t]||(()=>{}))()});
-const TABS={};const toast=(t,ms=2500,fn)=>{const e=$('toast');e.textContent=t;e.style.display='block';e.onclick=fn||null;clearTimeout(e._t);if(ms)e._t=setTimeout(()=>e.style.display='none',ms)};
+const TABS={};window.APPV='3.6';const toast=(t,ms=2500,fn)=>{const e=$('toast');e.textContent=t;e.style.display='block';e.onclick=fn||null;clearTimeout(e._t);if(ms)e._t=setTimeout(()=>e.style.display='none',ms)};
 // ---------- map ----------
 const T=new Set(TK);
 const map=L.map('map',{zoomControl:false,preferCanvas:true,minZoom:6,maxZoom:18,maxBounds:[[3,113],[23,130]],attributionControl:true});
@@ -91,13 +105,21 @@ const DCOL={3:'#a5f3fc',5:'#67e8f9',10:'#7dd3fc',20:'#38bdf8',30:'#0ea5e9',50:'#
 function drawDepth(){G.depth.clearLayers();G.dlab.clearLayers();if(!CF||!map.hasLayer(G.depth))return;const b=map.getBounds().pad(.1),z=map.getZoom();
  const src=CF.filter(l=>l.bb.intersects(b));const useN=z<11||!src.length;const lines=(useN?CN.filter(l=>l.bb.intersects(b)&&(z>=9||l[0]>=50)):src);
  const th=tideHere(map.getCenter());let nl=0;
- lines.forEach(l=>{L.polyline(l[1],{renderer:ren2,color:DCOL[l[0]]||'#fff',weight:l[0]>=20?1.6:1.2,opacity:.9,dashArray:l[0]<10?'4 4':null,interactive:false}).addTo(G.depth);
-  if(z>=(useN?9:13)&&nl<70){const p=l[1][Math.floor(l[1].length/2)];if(b.contains(p)){nl++;const now=th?(l[0]+th.h).toFixed(1):null;
-   L.marker(p,{interactive:false,icon:L.divIcon({className:'dl',html:`<span>${l[0]} m${now?` · now ${now}`:''}</span>`,iconSize:null})}).addTo(G.dlab)}}})}
+ lines.forEach(l=>{ // skip shallow contours that are mostly near shore (unreliable)
+  const mid=l[1][Math.floor(l[1].length/2)];const d=depthAt(mid[0],mid[1]);const fade=d&&d.unreliable;
+  if(l[0]<=5&&fade)return; // hide 3/5 m near shore
+  L.polyline(l[1],{renderer:ren2,color:DCOL[l[0]]||'#fff',weight:l[0]>=20?1.6:1.2,opacity:fade?.35:.9,dashArray:l[0]<10?'4 4':null,interactive:false}).addTo(G.depth);
+  if(z>=(useN?9:13)&&nl<70&&b.contains(mid)&&!(d&&d.unreliable&&l[0]<=10)){nl++;const now=th?(l[0]+th.h).toFixed(1):null;
+   L.marker(mid,{interactive:false,icon:L.divIcon({className:'dl',html:`<span>${l[0]} m${now?` · ~${now}`:''} <i style="opacity:.7">approx</i></span>`,iconSize:null})}).addTo(G.dlab)}});
+ if(z>=12&&!G._dnote){G._dnote=1; /* one-time layer control note via legend in Info */}}
 map.on('moveend',()=>drawDepth());
 // ---------- depth grid ----------
 let GRID=null,PRE=[];fetch('nat/grids.json').then(r=>r.json()).then(g=>{GRID=g;buildSpots()});fetch('nat/presets.json').then(r=>r.json()).then(p=>{PRE=p;renderAreas()});
-function depthAt(lat,lon){if(!GRID)return null;for(const k in GRID){const[la0,lo0,dla,dlo,nla,nlo,v]=GRID[k];const i=Math.round((lat-la0)/dla),j=Math.round((lon-lo0)/dlo);if(i>=0&&j>=0&&i<nla&&j<nlo){const z=v[i*nlo+j];if(z==9999)return null;return{z,reg:k}}}return null}
+function depthAt(lat,lon){if(!GRID)return null;for(const k in GRID){const[la0,lo0,dla,dlo,nla,nlo,v]=GRID[k];const i=Math.round((lat-la0)/dla),j=Math.round((lon-lo0)/dlo);if(i>=0&&j>=0&&i<nla&&j<nlo){const z=v[i*nlo+j];if(z==9999)return null;
+  // reliability: count land neighbours in 3x3 (~450 m cells). Near-shore / mixed cells are unreliable for spearfishing.
+  let land=0,water=0,n=0;for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++){const ii=i+di,jj=j+dj;if(ii<0||jj<0||ii>=nla||jj>=nlo)continue;const q=v[ii*nlo+jj];if(q==9999)continue;n++;if(q>=0)land++;else water++}
+  const shoreMix=n>0&&land/n>=0.25;const nearShore=z>-8&&land>0;const unreliable=shoreMix||nearShore||z>=-3;
+  return{z,reg:k,unreliable,land,water}}}return null}
 // ---------- tides ----------
 const EP=Date.UTC(2000,0,1,12);let HARM=null;fetch('nat/harm.json').then(r=>r.json()).then(h=>{HARM=h;TABS.tide();drawDepth()});
 function fu(n,th){const N=(125.04-0.052954*th/24)*D2R,c=Math.cos(N),s=Math.sin(N),fM=1-.037*c,uM=-2.1*s,K1=[1.006+.115*c,-8.9*s],O1=[1.009+.187*c,10.8*s];
@@ -140,13 +162,14 @@ let mode=null;
 map.on('click',e=>{const ll=e.latlng;if(mode=='measure')return measureClick(ll);if(mode=='log'){mode=null;$('addTap').classList.remove('on');return openForm([ll.lat,ll.lng])}
  const d=depthAt(ll.lat,ll.lng),st=zoneStatus([ll.lat,ll.lng]);let h=`<b>${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}</b><br>`;
  if(st.inside.length)h+=`<b style="color:#f87171">Inside ${esc(st.inside.join(', '))}: NO TAKE</b><br>`;else if(st.inBuf.length)h+=`<b style="color:#fb923c">In safety buffer</b><br>`;else if(st.near)h+=`Nearest protected boundary: ${fmtD(st.near.d)} ${card(bearing([ll.lat,ll.lng],st.near.bp))}<br>`;
- if(d&&d.z<0){const c=-d.z,tn=tideAt(ll,tNow()),ex=extremes(ll,tNow(),26),lo=ex.find(x=>x.k=='L'),hi=ex.find(x=>x.k=='H');
-  h+=`Charted depth ≈ <b>${c} m</b> (SRTM15+, ~MSL, 450 m cells, coarse near shore)`;if(tn)h+=`<br>${previewH?'At '+hm(tNow()):'Now'}: <b>${(c+tn.h).toFixed(1)} m</b>`+(lo?`<br>Next low ${hm(lo.t)}: ${(c+lo.h).toFixed(1)} m`:'')+(hi?`<br>Next high ${hm(hi.t)}: ${(c+hi.h).toFixed(1)} m`:'')+`<br><span class="note">Tide: ${tn.src}</span>`}
- else if(d)h+='Land/intertidal in depth grid (coarse).';else h+='<span class="note">No detailed depth grid here (only preset regions).</span>';
+ if(d&&d.z<0){const c=-d.z;if(d.unreliable){h+=`<b>Depth unreliable here</b><br>Too close to shore / mixed land–water cell for the ~450 m SRTM15+ grid. Do not use for dive planning.<br><span class="note">Source: SRTM15+ (≈ mean sea level). Contours are approximate.</span>`}
+  else{const tn=tideAt(ll,tNow()),ex=extremes(ll,tNow(),26),lo=ex.find(x=>x.k=='L'),hi=ex.find(x=>x.k=='H');
+  h+=`Approx. depth <b>~${c} m</b> <span class="note">(SRTM15+, ~MSL, ~450 m grid — not a chart)</span>`;if(tn)h+=`<br>${previewH?'At '+hm(tNow()):'Now'} (tide-adj.): <b>~${(c+tn.h).toFixed(1)} m</b>`+(lo?`<br>Next low ${hm(lo.t)}: ~${(c+lo.h).toFixed(1)} m`:'')+(hi?`<br>Next high ${hm(hi.t)}: ~${(c+hi.h).toFixed(1)} m`:'')+`<br><span class="note">Tide: ${tn.src}</span>`}}
+ else if(d)h+='<b>Depth unreliable here</b><br>Land/intertidal cell in the ~450 m grid. Too close to shore for a depth reading.';else h+='<span class="note">No local depth grid here (only downloaded/preset regions have ~450 m SRTM15+ cells).</span>';
  L.popup({maxWidth:290,autoPanPaddingTopLeft:L.point(10,$('top').getBoundingClientRect().bottom+12),autoPanPaddingBottomRight:L.point(70,sheet.getBoundingClientRect().height+12)}).setLatLng(ll).setContent(h).openOn(map)});
 // ---------- GPS & nav ----------
 let me=null,dot,acc,heading=null,lastWarn='';
-function startGPS(){if(!navigator.geolocation){$('gps').textContent='No GPS';return}$('gps').textContent='GPS…';
+let watching=false;function startGPS(){if(watching)return;watching=true;if(!navigator.geolocation){$('gps').textContent='No GPS';return}$('gps').textContent='GPS…';
  navigator.geolocation.watchPosition(p=>{const{latitude:la,longitude:lo,accuracy:a}=p.coords;me=[la,lo];
   if(!dot){acc=L.circle(me,{radius:a,color:'#3b82f6',weight:1,fillOpacity:.12,interactive:false}).addTo(map);dot=L.marker(me,{interactive:false,icon:L.divIcon({className:'',html:'<div id="medot"></div>',iconSize:[22,22]})}).addTo(map);map.setView(me,16)}
   acc.setLatLng(me).setRadius(a);dot.setLatLng(me);$('gps').innerHTML='<svg width="11" height="11" viewBox="0 0 16 16" style="vertical-align:-1px"><circle cx="8" cy="8" r="3" fill="#60a5fa"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#60a5fa" stroke-width="1.5"/></svg> ±'+Math.round(a)+' m';trackPoint(me,a);updateNav();if(!window._s1){window._s1=1;summary()}},
@@ -199,30 +222,53 @@ $('dRst').onclick=()=>{clearInterval(dI);dv={st:'idle',t0:0,last:0,hist:[]};$('d
 // ---------- fish ----------
 $('fishL').innerHTML=FISH.map(f=>`<div class="card"><img loading="lazy" src="fish/${f.k}.jpg" alt=""><div><b>${esc(f.n)}</b> <span class="tag ${f.f}">${f.f=='ok'?'OK to take':f.f=='warn'?'CAUTION':'DO NOT TAKE'}</span><br><i class="note">${esc(f.s)}</i><div>${esc(f.note)}</div>${f.warn?`<div style="color:#fbbf24">⚠ ${esc(f.warn)}</div>`:''}<div class="note" style="font-size:10.5px">Photo: ${esc(f.by)}, ${esc(f.lic)} · <a href="${f.src}" style="color:#7dd3fc">source</a></div></div></div>`).join('');
 // ---------- spots ----------
-let SPOTS=[];fetch('nat/spots.json').then(r=>r.json()).then(s=>{SPOTS=s.map(x=>({n:x[0],ll:[x[1],x[2]],area:x[3],src:x[4],kind:'web'}));
- SPOTS.unshift({n:'Tondol White Beach, west end',ll:[16.3138,120.0153],area:'Anda, Pangasinan',src:'',kind:'own',why:'Sandy shore entry. Swim NW, away from the estimated Caniogan box (~1.3 km SSE). Magsaysay MPA ~2 km E. Shallow seagrass first.'});checkSpots()});
-function checkSpots(){if(!SPOTS.length)return;G.spots.eachLayer(l=>{if(l._spot)G.spots.removeLayer(l)});
+let SPOTS=[],COAST=[],AUTO=[];
+fetch('nat/spots_acc.json').then(r=>r.json()).then(s=>{
+ SPOTS=s.map(x=>({n:x.n,ll:x.ll,area:x.area,src:x.src,kind:'web',acc:x.acc,swim:x.swim,entry:x.entry,long:x.long,est:x.est,why:x.why}));
+ SPOTS.unshift({n:'Tondol White Beach, west end',ll:[16.3138,120.0153],area:'Anda, Pangasinan',src:'',kind:'own',acc:'beach',swim:50,entry:[16.3138,120.0153],long:false,est:false,why:'Sandy shore entry from the beach. Swim NW, away from the estimated Caniogan box (~1.3 km SSE).'});
+ checkSpots()}).catch(e=>console.warn('spots',e));
+fetch('nat/coast.json').then(r=>r.json()).then(c=>{COAST=c}).catch(()=>{});
+function passesFilter(s){const S=getSettings();if(!S.access[s.acc||'shore'])return false;if((s.swim||0)>S.maxSwim&&s.acc!='boat')return false;if(S.access.boat===false&&s.acc==='boat')return false;if(s.bad)return false;return true}
+function spotPopup(s){const star=isFav('spot',s.n+s.ll.join(','));
+ return `<button class="star" data-star="spot" data-key="${esc(s.n+s.ll.join(','))}" data-name="${esc(s.n)}" data-ll="${s.ll}">${star?'★':'☆'}</button><b>${esc(s.n)}</b><br>${ACC_ICON[s.acc]||''} ${s.acc||'?'} entry · swim ~${fmtSwim(s.swim||0)}${s.long?' · <b>long swim</b>':''}${s.est?' · <span class="est">ESTIMATED</span>':''}<br>${esc(s.area||'')}<br>${s.why?esc(s.why)+'<br>':''}${s.bad?`<b style="color:#f87171">Inside/near ${esc(s.bad)} — not legal to fish here.</b><br>`:''}${s.near?`Nearest protected boundary: ${fmtD(s.near.d)}<br>`:''}<a class="btn p" style="display:inline-block;margin-top:6px;text-decoration:none" href="${gmaps(s.entry||s.ll)}" target="_blank" rel="noopener">Navigate to entry (Google Maps)</a>${s.src?`<br><span class="note">Source: <a href="${s.src}" style="color:#7dd3fc">${s.src.replace('https://','')}</a></span>`:'<br><span class="note">Our own suggestion.</span>'}<br><span class="note">Always check local ordinances (LGU) first.</span>`}
+let selLine=null,selEntry=null;
+function selectSpot(s){if(selLine){map.removeLayer(selLine);selLine=null}if(selEntry){map.removeLayer(selEntry);selEntry=null}
+ if(s.entry){selEntry=L.circleMarker(s.entry,{radius:7,color:'#fff',weight:2,fillColor:'#38bdf8',fillOpacity:1}).bindTooltip('Entry',{permanent:true,direction:'right',className:'lbl'}).addTo(map);
+  if(s.ll)selLine=L.polyline([s.entry,s.ll],{color:'#38bdf8',weight:2,dashArray:'6 6'}).bindTooltip('~'+fmtSwim(s.swim||0)+' swim',{permanent:false}).addTo(map);map.fitBounds(L.latLngBounds([s.entry,s.ll]).pad(.4))}}
+function checkSpots(){if(!SPOTS.length)return;G.spots.clearLayers();
  SPOTS.forEach(s=>{const st=zoneStatus(s.ll,5);s.bad=st.inside.length||st.inBuf.length?(st.inside[0]||st.inBuf[0]):null;s.near=st.near;
-  const m=L.marker(s.ll,{icon:pinI(s.bad?'#9ca3af':'#22c55e')}).bindPopup(`<b>${esc(s.n)}</b><br>${esc(s.area)}<br>${s.why?esc(s.why)+'<br>':''}${s.bad?`<b style="color:#f87171">Inside/near ${esc(s.bad)} — not legal to fish here.</b><br>`:''}${s.near?`Nearest protected boundary: ${fmtD(s.near.d)}<br>`:''}${s.src?`<span class="note">Source: <a href="${s.src}" style="color:#7dd3fc">${s.src.replace('https://','')}</a> (approximate area point, not an exact entry)</span>`:'<span class="note">Our own suggestion from satellite + MPA data.</span>'}<br><span class="note">Always check local ordinances (LGU) first.</span>`);m._spot=1;m.addTo(G.spots)});buildSpots()}
-// auto-suggested zones from depth grid
-let AUTO=[];
-function buildZones(){if(!GRID||!NAT)return;AUTO=[];G.zones.clearLayers();for(const k in GRID){const[la0,lo0,dla,dlo,nla,nlo,v]=GRID[k];const Z=(i,j)=>(i<0||j<0||i>=nla||j>=nlo)?9999:v[i*nlo+j];const c=[];
- for(let i=1;i<nla-1;i++)for(let j=1;j<nlo-1;j++){const z=Z(i,j);if(z==9999||z>-3||z<-15)continue;let land=null,deep=0;
-  for(let di=-2;di<=2;di++)for(let dj=-2;dj<=2;dj++){const q=Z(i+di,j+dj);if(q==9999)continue;if(q>=0&&(!land||Math.abs(di)+Math.abs(dj)<Math.abs(land[0])+Math.abs(land[1])))land=[di,dj];if(q<=z-12)deep++}
-  if(!land||!deep)continue;const ll=[la0+i*dla,lo0+j*dlo];const st=zoneStatus(ll,5);if(st.inside.length||st.inBuf.length||(st.near&&st.near.d<300))continue;
-  const sh=Math.hypot(land[0]*dla*111,land[1]*dlo*107);c.push({ll,z:-z,deep,sh,land:Math.atan2(land[1],land[0])*R2D,reg:k,score:deep*2+(sh<.6?4:sh<1?2:0)})}
- c.sort((a,b)=>b.score-a.score);const pick=[];for(const x of c){if(pick.length>=8)break;if(pick.every(p=>hav(p.ll,x.ll)>1200))pick.push(x)}AUTO.push(...pick)}
- AUTO.forEach(a=>{a.n=`Suggested zone (ESTIMATED), ~${a.z} m`;a.why=`Depth ≈ ${a.z} m in a 450 m cell with a drop-off (${a.deep} deeper cells nearby) and land ~${a.sh.toFixed(1)} km away. Not checked on the ground; no beach access data; coarse depth.`;
-  L.circle(a.ll,{radius:220,color:'#a3e635',weight:1.5,dashArray:'4 4',fillOpacity:.08}).bindPopup(`<b>${a.n}</b><br>${a.why}<br>Outside all mapped MPAs + 300 m.`).addTo(G.zones)})}
+  if(!passesFilter(s)&&!s.bad)return; // still show bad grey? skip filtered
+  if(s.bad){/* grey shown only if somehow visible */}
+  if(!passesFilter(s))return;
+  const col=s.acc==='beach'?'#22c55e':s.acc==='shore'?'#84cc16':'#0ea5e9';
+  const m=L.marker(s.ll,{icon:pinI(s.bad?'#9ca3af':col)}).bindPopup(spotPopup(s));m._spot=1;m.on('popupopen',()=>selectSpot(s));m.addTo(G.spots)});buildSpots();bindStars()}
+function isFav(type,key){return loadRecs(FAV_KEY).some(f=>f.type===type&&f.key===key)}
+function bindStars(){document.querySelectorAll('[data-star]').forEach(b=>b.onclick=e=>{e.stopPropagation();const type=b.dataset.star,key=b.dataset.key,name=b.dataset.name,ll=b.dataset.ll.split(',').map(Number);
+  const existing=LS.get(FAV_KEY,[]).find(f=>f.type===type&&f.key===key&&!f.deleted_at);
+  if(existing)softDel(FAV_KEY,existing.id);else upsertRec(FAV_KEY,{type,key,name,ll});b.textContent=isFav(type,key)?'★':'☆';renderFavs()})}
+function buildZones(){if(!GRID||!NAT)return;AUTO=[];G.zones.clearLayers();const S=getSettings();
+ for(const k in GRID){const[la0,lo0,dla,dlo,nla,nlo,v]=GRID[k];const Z=(i,j)=>(i<0||j<0||i>=nla||j>=nlo)?9999:v[i*nlo+j];const c=[];
+  for(let i=1;i<nla-1;i++)for(let j=1;j<nlo-1;j++){const z=Z(i,j);if(z==9999||z>-3||z<-15)continue;let land=null,deep=0;
+   for(let di=-2;di<=2;di++)for(let dj=-2;dj<=2;dj++){const q=Z(i+di,j+dj);if(q==9999)continue;if(q>=0&&(!land||Math.abs(di)+Math.abs(dj)<Math.abs(land[0])+Math.abs(land[1])))land=[di,dj,q];if(q<=z-12)deep++}
+   if(!land||!deep)continue;const ll=[la0+i*dla,lo0+j*dlo];const st=zoneStatus(ll,5);if(st.inside.length||st.inBuf.length||(st.near&&st.near.d<300))continue;
+   const sh=Math.hypot(land[0]*dla*111,land[1]*dlo*107); // km to land cell
+   const swim=sh*1000;const beachy=land[2]<=5;let acc=swim>500?'boat':(swim<=300&&beachy?'beach':'shore');
+   if(!S.access[acc])continue;if(acc!='boat'&&swim>S.maxSwim)continue;if(!S.access.boat&&acc==='boat')continue;
+   const entry=[la0+(i+land[0])*dla,lo0+(j+land[1])*dlo];
+   c.push({ll,z:-z,deep,sh,swim,acc,entry,long:swim>300&&swim<=500,land:Math.atan2(land[1],land[0])*R2D,reg:k,score:deep*2+(swim<300?4:swim<500?2:0)+(beachy?2:0)})}
+  c.sort((a,b)=>b.score-a.score);const pick=[];for(const x of c){if(pick.length>=8)break;if(pick.every(p=>hav(p.ll,x.ll)>1200))pick.push(x)}AUTO.push(...pick)}
+ AUTO.forEach(a=>{a.n=`Suggested (${ACC_ICON[a.acc]} ${a.acc})`;a.why=`ESTIMATED: ~${a.z} m depth, ~${fmtSwim(a.swim)} swim from land, drop-off nearby. Outside mapped MPAs + 300 m.`;
+  L.circle(a.ll,{radius:220,color:a.acc==='boat'?'#0ea5e9':'#a3e635',weight:1.5,dashArray:'4 4',fillOpacity:.08}).bindPopup(spotPopup(a)).on('popupopen',()=>selectSpot(a)).addTo(G.zones)});bindStars()}
 function wxFor(ll){const all=LS.get('wx',{});let best=null;for(const k in all){const w=all[k];const d=hav(ll,w.ll);if(d<60000&&(!best||d<best.d))best={...w,d}}return best}
-function wxNow(w){if(!w)return null;const t=tNow(),i=w.h.time.findIndex(x=>new Date(x+':00+08:00')>t)-1;if(i<0)return null;return{ws:w.h.wind_speed_10m[i],wd:w.h.wind_direction_10m[i],g:w.h.wind_gusts_10m?w.h.wind_gusts_10m[i]:null,wh:w.m?w.m.wave_height[i]:null,sw:w.m?w.m.swell_wave_height[i]:null}}
-function buildSpots(){if(!SPOTS.length||!GRID||!NAT)return;if(!AUTO.length)buildZones();const from=me||[map.getCenter().lat,map.getCenter().lng];
- const all=[...SPOTS.filter(s=>!s.bad),...AUTO].map(s=>{const t=goodAt(L.latLng(s.ll),tNow()),w=wxNow(wxFor(s.ll));let sc=(t?3:0);let wtxt='no forecast cached';
+function wxNow(w){if(!w||!w.h||!w.h.time)return null;const t=tNow(),i=w.h.time.findIndex(x=>new Date(x+':00+08:00')>t)-1;if(i<0)return null;return{ws:w.h.wind_speed_10m[i],wd:w.h.wind_direction_10m[i],g:w.h.wind_gusts_10m?w.h.wind_gusts_10m[i]:null,wh:w.m?w.m.wave_height[i]:null,sw:w.m?w.m.swell_wave_height[i]:null}}
+function buildSpots(){if(!SPOTS.length||!GRID||!NAT)return;AUTO=[];buildZones();const from=me||[map.getCenter().lat,map.getCenter().lng];
+ const all=[...SPOTS.filter(passesFilter),...AUTO.filter(passesFilter)].map(s=>{const t=goodAt(L.latLng(s.ll),tNow()),w=wxNow(wxFor(s.ll));let sc=(t?3:0);let wtxt='no forecast cached';
   if(w){sc+=w.ws<15?2:w.ws<25?0:-3;if(w.wh!=null)sc+=w.wh<.5?2:w.wh<1?0:-3;if(s.land!=null){const on=Math.abs(((w.wd-(s.land+180))+540)%360-180)<60;if(on)sc-=1}wtxt=`wind ${Math.round(w.ws)} km/h ${card(w.wd)}${w.wh!=null?', waves '+w.wh.toFixed(1)+' m':''}`}
-  const d=hav(from,s.ll);sc-=Math.log10(Math.max(d,1000)/1000)*2;return{s,sc,d,t,wtxt}}).sort((a,b)=>b.sc-a.sc).slice(0,12);
- $('best').innerHTML=all.map(x=>`<div class="row" style="justify-content:space-between;flex-wrap:nowrap;border-bottom:1px solid #22384a;padding:5px 0"><span style="flex:1"><b>${esc(x.s.n)}</b> <span class="note">${esc(x.s.area||x.s.reg||'')}</span><br><span class="note">${fmtD(x.d)} away · tide ${x.t?'<span style="color:#4ade80">good</span>':'not ideal'} · ${x.wtxt}</span></span><button class="btn" data-ll="${x.s.ll}">Show</button></div>`).join('');
- $('best').querySelectorAll('[data-ll]').forEach(b=>b.onclick=()=>{map.setView(b.dataset.ll.split(',').map(Number),15);setSnap('')})}
+  const d=hav(from,s.ll);sc-=Math.log10(Math.max(d,1000)/1000)*2;if(s.acc==='beach')sc+=1;return{s,sc,d,t,wtxt}}).sort((a,b)=>b.sc-a.sc).slice(0,12);
+ $('best').innerHTML=all.length?all.map(x=>`<div class="row" style="justify-content:space-between;flex-wrap:nowrap;border-bottom:1px solid #22384a;padding:5px 0"><span style="flex:1"><b>${ACC_ICON[x.s.acc]||''} ${esc(x.s.n)}</b> <span class="note">${esc(x.s.area||x.s.reg||'')}</span><br><span class="note">${fmtD(x.d)} · swim ~${fmtSwim(x.s.swim||0)}${x.s.long?' · long':''} · tide ${x.t?'<span style="color:#4ade80">good</span>':'not ideal'} · ${x.wtxt}</span></span><button class="btn" data-ll="${x.s.ll}">Show</button></div>`).join(''):'<span class="note">No spots match your filters. Open Settings ⚙ to allow Boat or raise max swim.</span>';
+ $('best').querySelectorAll('[data-ll]').forEach(b=>b.onclick=()=>{const ll=b.dataset.ll.split(',').map(Number);const s=[...SPOTS,...AUTO].find(x=>x.ll[0]===ll[0]&&x.ll[1]===ll[1]);map.setView(ll,15);if(s){selectSpot(s);L.popup().setLatLng(ll).setContent(spotPopup(s)).openOn(map);bindStars()}setSnap('')})}
 TABS.spots=()=>buildSpots();
+
 // ---------- areas (offline download) ----------
 const lon2x=(lo,z)=>Math.floor((lo+180)/360*2**z),lat2y=(la,z)=>Math.floor((1-Math.log(Math.tan(la*D2R)+1/Math.cos(la*D2R))/Math.PI)/2*2**z);
 function tileList(b,zmax){const o=[];for(let z=10;z<=zmax;z++){const x0=lon2x(b[1],z),x1=lon2x(b[3],z),y0=lat2y(b[2],z),y1=lat2y(b[0],z);for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++)o.push([z,x,y])}return o}
@@ -259,16 +305,54 @@ $('wxR').onclick=async()=>{const c=me||[map.getCenter().lat,map.getCenter().lng]
 TABS.areas=()=>{renderAreas()};TABS.nav=()=>{renderWx()};
 // ---------- info ----------
 $('nt').innerHTML=E.notake.map(s=>`<li>${s}</li>`).join('');$('ca').innerHTML=E.caution.map(s=>`<li>${s}</li>`).join('');
-$('mpaT').innerHTML='<tr><th>Anda area</th><th>ha</th><th>Boundary</th></tr>'+D.mpas.filter(m=>m.id!=1292).map(m=>`<tr><td>${m.name}</td><td>${m.ha}</td><td>${m.ll.length?'published':(m.id==990||m.id==1027?'<b>estimated</b>':'point only')}</td></tr>`).join('');
+$('mpaT').innerHTML='<tr><th>Nearby (bundled)</th><th>ha</th><th>Boundary</th></tr>'+D.mpas.filter(m=>m.id!=1292).map(m=>`<tr><td>${m.name}</td><td>${m.ha}</td><td>${m.ll.length?'published':(m.id==990||m.id==1027?'<b>estimated</b>':'point only')}</td></tr>`).join('');
 // layers toggle
-const LAY=[['MPAs (Anda)','mpa'],['Estimated (Anda)','est'],['MPAs (national)','nat'],['Spots','spots'],['Suggested zones','zones'],['Depth lines','depth'],['My log','log'],['Swim track','track']];
+const LAY=[['MPAs (local)','mpa'],['Estimated (local)','est'],['MPAs (national)','nat'],['Spots','spots'],['Suggested zones','zones'],['Depth lines (approx)','depth'],['My log','log'],['Swim track','track'],['Custom pins','pins']];
+if(!G.pins)G.pins=L.layerGroup().addTo(map);
 $('lay').onclick=()=>{const h='<b>Layers</b><br>'+LAY.map(([n,k])=>`<label style="display:block;padding:4px 0"><input type="checkbox" style="width:auto" data-k="${k}" ${map.hasLayer(G[k])?'checked':''}> ${n}</label>`).join('');const p=L.popup().setLatLng(map.getCenter()).setContent(h).openOn(map);
  p.getElement().querySelectorAll('input').forEach(i=>i.onchange=()=>{const g=G[i.dataset.k];i.checked?g.addTo(map):map.removeLayer(g);if(i.dataset.k=='depth'){i.checked?(G.dlab.addTo(map),drawDepth()):map.removeLayer(G.dlab)}})};
-$('zT').onclick=()=>{map.fitBounds([[16.296,120.008],[16.318,120.035]]);setSnap('')};$('zA').onclick=()=>{map.fitBounds([[16.255,119.94],[16.40,120.07]]);setSnap('')};$('zP').onclick=()=>{map.fitBounds([[4.5,116.5],[21,127]]);setSnap('')};
-map.on('zoomend',()=>document.body.classList.toggle('lowz',map.getZoom()<12));map.fitBounds([[16.296,120.008],[16.318,120.035]]);
+$('zMe').onclick=()=>{if(me)map.setView(me,14);else{startGPS();toast('Waiting for GPS…')}setSnap('')};
+$('zP').onclick=()=>{map.fitBounds([[4.5,116.5],[21,127]]);setSnap('')};
+map.on('zoomend',()=>document.body.classList.toggle('lowz',map.getZoom()<12));
+// Start view: GPS → last viewed → whole Philippines
+;(function(){const last=LS.get(LAST_KEY,null);if(last&&last.ll)map.setView(last.ll,last.z||12);else map.setView([12.5,122],6);
+ map.on('moveend',()=>{const c=map.getCenter();LS.set(LAST_KEY,{ll:[+c.lat.toFixed(5),+c.lng.toFixed(5)],z:map.getZoom()})});
+ try{if(navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>{me=[p.coords.latitude,p.coords.longitude];map.setView(me,14);startGPS()},()=>{},{maximumAge:60000,timeout:8000})}catch(e){}})();
 setInterval(()=>{if(!previewH&&$('p-tide').classList.contains('act'))TABS.tide();if(me)updateNav()},60000);
 // ---------- service worker + update toast ----------
-const APPV='3.5';$('off').insertAdjacentHTML('afterend','<p class="note">App version '+APPV+'</p>');
+
+function renderFavs(){const favs=loadRecs(FAV_KEY),pins=loadRecs(PIN_KEY);G.log; // keep
+ const items=[...favs.map(f=>({...f,kind:'fav'})),...pins.map(p=>({...p,kind:'pin'}))];
+ $('favL').innerHTML=items.length?items.map(f=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid #22384a;padding:5px 0"><span>${f.kind==='pin'?'📍':'★'} <b>${esc(f.name||'Pin')}</b><br><span class="note">${esc(f.note||f.type||'')}</span></span><span><button class="btn" data-fly="${f.ll}">Show</button> <a class="btn" href="${gmaps(f.ll)}" target="_blank" rel="noopener">Maps</a> <button class="btn r" data-del="${f.kind}:${f.id}">✕</button></span></div>`).join(''):'Nothing starred yet. Open a spot popup and tap ☆, or long-press the map.';
+ $('favL').querySelectorAll('[data-fly]').forEach(b=>b.onclick=()=>{map.setView(b.dataset.fly.split(',').map(Number),15);setSnap('')});
+ $('favL').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const[k,id]=b.dataset.del.split(':');softDel(k==='pin'?PIN_KEY:FAV_KEY,id);renderFavs();drawPins()})}
+TABS.favs=()=>renderFavs();
+function drawPins(){if(!G.pins){G.pins=L.layerGroup().addTo(map)}G.pins.clearLayers();
+ loadRecs(PIN_KEY).forEach(p=>L.marker(p.ll,{icon:pinI('#f472b6')}).bindPopup(`<button class="star" data-star="pin" data-key="${p.id}" data-name="${esc(p.name)}" data-ll="${p.ll}">★</button><b>${esc(p.name)}</b><br>${esc(p.note||'')}<br><span class="note">${p.when||''}</span><br><a class="btn p" style="display:inline-block;margin-top:6px;text-decoration:none" href="${gmaps(p.ll)}" target="_blank" rel="noopener">Navigate (Google Maps)</a>`).addTo(G.pins));bindStars()}
+// long-press map for custom pin
+let lpT=null,lpLL=null;
+map.on('contextmenu',e=>{e.originalEvent.preventDefault();openPinForm([e.latlng.lat,e.latlng.lng])});
+const mc=map.getContainer();
+mc.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;const t=e.touches[0],ll=map.mouseEventToLatLng(t);lpLL=[ll.lat,ll.lng];lpT=setTimeout(()=>{if(lpLL)openPinForm(lpLL)},550)},{passive:true});
+['touchend','touchmove','touchcancel'].forEach(ev=>mc.addEventListener(ev,()=>{clearTimeout(lpT);lpT=null},{passive:true}));
+function openPinForm(ll){const name=prompt('Pin name','My spot');if(name===null)return;const note=prompt('Note (optional)','')||'';
+ upsertRec(PIN_KEY,{name,note,ll,when:new Date().toLocaleString('en-GB'),type:'pin'});drawPins();renderFavs();toast('Pin saved');showTab('favs')}
+// Settings
+function loadOptsUI(){const S=getSettings();$('oBeach').checked=!!S.access.beach;$('oShore').checked=!!S.access.shore;$('oBoat').checked=!!S.access.boat;$('oSwim').value=S.maxSwim;$('oSwimV').textContent=S.maxSwim+' m';$('oUnits').value=S.units||'m'}
+function saveOpts(){const S=getSettings();S.access={beach:$('oBeach').checked,shore:$('oShore').checked,boat:$('oBoat').checked};S.maxSwim=+$('oSwim').value;S.units=$('oUnits').value;S.hideMpa=true;setSettings(S);$('oSwimV').textContent=S.maxSwim+' m';$('oMsg').textContent='Saved.';AUTO=[];checkSpots();buildSpots()}
+['oBeach','oShore','oBoat','oUnits'].forEach(id=>$(id).onchange=saveOpts);$('oSwim').oninput=()=>{$('oSwimV').textContent=$('oSwim').value+' m'};$('oSwim').onchange=saveOpts;
+TABS.opts=()=>loadOptsUI();
+$('oEx').onclick=()=>{const data={v:1,exported_at:nowIso(),settings:getSettings(),favs:LS.get(FAV_KEY,[]),pins:LS.get(PIN_KEY,[]),log:LS.get('anda_log',[]),track:LS.get('anda_track',[])};
+ share('spearfishing-backup.json','application/json',JSON.stringify(data,null,1))};
+$('oIm').onclick=()=>$('oFile').click();
+$('oFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const data=JSON.parse(await f.text());
+  if(data.settings)setSettings(Object.assign(defaultSettings(),data.settings));
+  if(Array.isArray(data.favs))LS.set(FAV_KEY,data.favs);if(Array.isArray(data.pins))LS.set(PIN_KEY,data.pins);
+  if(Array.isArray(data.log))LS.set('anda_log',data.log);if(Array.isArray(data.track))LS.set('anda_track',data.track);
+  LOG=LS.get('anda_log',[]);trk=LS.get('anda_track',[]);trkLine.setLatLngs(trk.map(p=>[p[0],p[1]]));renderLog();drawPins();renderFavs();loadOptsUI();checkSpots();$('oMsg').textContent='Import OK ('+(data.favs||[]).length+' favs, '+(data.pins||[]).length+' pins).'}catch(err){$('oMsg').textContent='Import failed: '+err.message}e.target.value=''};
+drawPins();
+
+const APPV=window.APPV||'3.6';$('off').insertAdjacentHTML('afterend','<p class="note">App version '+APPV+'</p>');
 let REG=null,reloading=false,updShown=false;
 function doReload(){if(reloading)return;reloading=true;location.reload()}
 function showUpdate(){if(updShown)return;updShown=true;toast('⬆️ Update available — tap to reload',0,async()=>{toast('Updating…',0);setTimeout(doReload,3000);
