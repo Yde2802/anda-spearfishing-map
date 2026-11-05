@@ -137,13 +137,13 @@ let me=null,dot,acc,heading=null,lastWarn='';
 function startGPS(){if(!navigator.geolocation){$('gps').textContent='No GPS';return}$('gps').textContent='GPS…';
  navigator.geolocation.watchPosition(p=>{const{latitude:la,longitude:lo,accuracy:a}=p.coords;me=[la,lo];
   if(!dot){acc=L.circle(me,{radius:a,color:'#3b82f6',weight:1,fillOpacity:.12,interactive:false}).addTo(map);dot=L.marker(me,{interactive:false,icon:L.divIcon({className:'',html:'<div id="medot"></div>',iconSize:[22,22]})}).addTo(map);map.setView(me,16)}
-  acc.setLatLng(me).setRadius(a);dot.setLatLng(me);$('gps').textContent='📍 ±'+Math.round(a)+' m';trackPoint(me,a);updateNav();if(!window._s1){window._s1=1;summary()}},
+  acc.setLatLng(me).setRadius(a);dot.setLatLng(me);$('gps').innerHTML='<svg width="11" height="11" viewBox="0 0 16 16" style="vertical-align:-1px"><circle cx="8" cy="8" r="3" fill="#60a5fa"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="#60a5fa" stroke-width="1.5"/></svg> ±'+Math.round(a)+' m';trackPoint(me,a);updateNav();if(!window._s1){window._s1=1;summary()}},
  e=>{$('gps').textContent=e.code==1?'GPS denied':'GPS unavailable'},{enableHighAccuracy:true,maximumAge:3000,timeout:20000})}
 function updateNav(){if(!me)return;const st=zoneStatus(me);const bn=$('banner');let w='';
  if(st.inside.length){w='mpa';bn.className='';bn.textContent='⛔ INSIDE '+st.inside[0]+' — NO TAKE. Leave the area.';bn.style.display='block'}
  else if(st.inBuf.length){w='buf';bn.className='buf';bn.textContent='⚠️ In safety buffer of a protected area. Move away.';bn.style.display='block'}else bn.style.display='none';
  if(w&&w!=lastWarn&&navigator.vibrate)navigator.vibrate(w=='mpa'?[400,150,400,150,400]:[300,150,300]);lastWarn=w;
- if(st.near){const b=bearing(me,st.near.bp);$('nd').textContent=fmtD(st.near.d)+' '+card(b);$('nn').textContent='to '+st.near.name+' (bearing '+Math.round(b)+'°)';$('dist').textContent=st.inside.length?'⛔ IN MPA':'⛔ MPA '+fmtD(st.near.d)+' '+card(b);$('dist').classList.toggle('warn',!!st.inside.length||st.near.d<300);
+ if(st.near){const b=bearing(me,st.near.bp);$('nd').textContent=fmtD(st.near.d)+' '+card(b);$('nn').textContent='to '+st.near.name+' (bearing '+Math.round(b)+'°)';$('dist').textContent=st.inside.length?'Inside MPA — no take':'MPA '+fmtD(st.near.d)+' '+card(b);$('sdot').className=st.inside.length?'r':(st.inBuf.length||st.near.d<300)?'o':'g';$('sarr').style.display=st.inside.length?'none':'';$('sarr').style.transform=`rotate(${b-(heading||0)}deg)`;
   $('arrow').style.transform=`rotate(${b-(heading||0)}deg)`}else{$('nd').textContent='> 30 km';$('nn').textContent='No mapped protected area within 30 km.'}}
 $('me').onclick=()=>{if(!me)startGPS();else map.setView(me,Math.max(map.getZoom(),16))};
 $('hd').onclick=async()=>{try{if(typeof DeviceOrientationEvent!='undefined'&&DeviceOrientationEvent.requestPermission){const r=await DeviceOrientationEvent.requestPermission();if(r!='granted'){toast('Compass permission denied');return}}
@@ -261,7 +261,7 @@ if('serviceWorker' in navigator){let had=!!navigator.serviceWorker.controller;na
  r.addEventListener('updatefound',()=>{const n=r.installing;n&&n.addEventListener('statechange',()=>{if(n.state=='installed'&&navigator.serviceWorker.controller)toast('Update available — tap to reload',0,()=>{n.postMessage('skip')})})});setInterval(()=>r.update(),3600e3)}).catch(()=>{});
  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 function summary(){const ll=me?L.latLng(me):map.getCenter(),tn=tideAt(ll,new Date());let lo=null;if(tn){const ex=extremes(ll,new Date(),26);lo=ex.find(x=>x.k=='L')}
- if(tn)$('ttop').textContent='🌊 '+(tn.h>=0?'+':'')+tn.h.toFixed(1)+' m'+(lo?' · low '+hm(lo.t):'');
+ if(tn)$('ttop').textContent='Tide '+(tn.h>=0?'+':'')+tn.h.toFixed(1)+' m'+(lo?' · low '+hm(lo.t):'');
  let mp='MPA –';if(me){const st=zoneStatus(me);mp=st.inside.length?'INSIDE MPA':st.near?'MPA '+fmtD(st.near.d)+' '+card(bearing(me,st.near.bp)):'No MPA within 30 km'}else mp='Tap ◎ for GPS';
  $('sum').textContent=mp+(tn?' · tide '+(tn.h>=0?'+':'')+tn.h.toFixed(2)+' m (MSL)':'')+(lo?' · next low '+hm(lo.t)+' ('+(lo.h>=0?'+':'')+lo.h.toFixed(2)+')':'')}
 setInterval(summary,60000);setTimeout(summary,1500);
