@@ -61,7 +61,7 @@ input[type=range]{padding:0}
 <label class="row" style="margin-top:8px"><input type="checkbox" id="oMpa" checked disabled style="width:auto"> Hide spots inside/near MPAs (always on)</label>
 <h3>Units</h3>
 <select id="oUnits"><option value="m">Metres</option><option value="ft">Feet</option></select>
-<h3>Backup</h3>
+<h3>Account</h3><div id="authBox"></div><h3>Backup</h3>
 <div class="row"><button class="btn" id="oEx">Export JSON</button><button class="btn" id="oIm">Import JSON</button><input type="file" id="oFile" accept="application/json,.json" style="display:none"></div>
 <div class="note">Exports favourites, custom pins, log, swim track and settings. No account — everything stays on this phone until you add sync later.</div>
 <div id="oMsg" class="note"></div>
@@ -94,4 +94,4 @@ input[type=range]{padding:0}
  <p class="note">Philippines-wide. National MPAs: 1,349 sites from the Philippine MPA Database (scraped 5 Nov 2026): 731 with published boundaries (red), 477 without boundary drawn as ESTIMATED circles from the official core area (orange dashed + 100 m buffer), 141 large/unknown sites as purple points. 490 entries without coordinates are not shown. Spots: spearo.app. Tide stations: UHSLC (University of Hawaii Sea Level Center). Weather: Open-Meteo.</p><p class="note">Imagery © Esri, Maxar, Earthstar Geographics. MPAs: Philippine MPA Database. Depth lines: SRTM15+, coarse near shore. Times Manila (UTC+8). v3, 5 Nov 2026.</p><p class="note" id="off"></p>
 </div>
 </div></div>
-<script src="leaflet.js"></script><script src="data.js"></script><script src="fish.js"></script><script src="app.js"></script></body></html>
+<script src="leaflet.js"></script><script src="supabase.js"></script><script src="sync.js"></script><script src="data.js"></script><script src="fish.js"></script><script src="app.js"></script></body></html>

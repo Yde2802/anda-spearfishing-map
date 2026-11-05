@@ -5,12 +5,12 @@ const $=id=>document.getElementById(id),LS={get:(k,d)=>{try{return JSON.parse(lo
 const uuid=()=>crypto.randomUUID?crypto.randomUUID():('xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c=='x'?r:(r&0x3|0x8)).toString(16)}));
 const nowIso=()=>new Date().toISOString();
 function loadRecs(key){return LS.get(key,[]).filter(r=>!r.deleted_at)}
-function upsertRec(key,rec){const all=LS.get(key,[]);rec.updated_at=nowIso();if(!rec.id)rec.id=uuid();rec.deleted_at=rec.deleted_at||null;const i=all.findIndex(x=>x.id===rec.id);if(i>=0)all[i]=rec;else all.push(rec);LS.set(key,all);return rec}
-function softDel(key,id){const all=LS.get(key,[]);const r=all.find(x=>x.id===id);if(r){r.deleted_at=nowIso();r.updated_at=r.deleted_at;LS.set(key,all)}}
+function upsertRec(key,rec){const all=LS.get(key,[]);rec.updated_at=nowIso();if(!rec.id)rec.id=uuid();rec.deleted_at=rec.deleted_at||null;const i=all.findIndex(x=>x.id===rec.id);if(i>=0)all[i]=rec;else all.push(rec);LS.set(key,all);try{afterLocalWrite&&afterLocalWrite()}catch(e){}return rec}
+function softDel(key,id){const all=LS.get(key,[]);const r=all.find(x=>x.id===id);if(r){r.deleted_at=nowIso();r.updated_at=r.deleted_at;LS.set(key,all);try{afterLocalWrite&&afterLocalWrite()}catch(e){}}}
 const SETTINGS_KEY='ph_settings',FAV_KEY='ph_favs',PIN_KEY='ph_pins',LAST_KEY='ph_last';
 const defaultSettings=()=>({access:{beach:true,shore:true,boat:false},maxSwim:400,hideMpa:true,units:'m'});
 function getSettings(){return Object.assign(defaultSettings(),LS.get(SETTINGS_KEY,{}))}
-function setSettings(s){LS.set(SETTINGS_KEY,s)}
+function setSettings(s){LS.set(SETTINGS_KEY,s);LS.set("ph_settings_at",nowIso());try{afterLocalWrite&&afterLocalWrite()}catch(e){}}
 const ACC_ICON={beach:'🏖',shore:'🪨',boat:'🚤'};
 function fmtSwim(m){const s=getSettings();return s.units==='ft'?Math.round(m*3.281)+' ft':Math.round(m)+' m'}
 function gmaps(ll){return `https://www.google.com/maps/dir/?api=1&destination=${ll[0]},${ll[1]}&travelmode=driving`}
@@ -49,7 +49,7 @@ setTimeout(()=>setSnap(''),0);
 $('grab').onclick=()=>performance.now()-dragEndT<500?0:setSnap(sheet.className=='min'?'':sheet.className==''?'big':'min');
 function showTab(t){const b=document.querySelector('#tabs [data-t='+t+']');document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+t).classList.add('act');if(sheet.className=='min')setSnap('');(TABS[t]||(()=>{}))()}
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{if(performance.now()-dragEndT<500)return;if(b.classList.contains('act')&&sheet.className!='min'){setSnap('min');return}document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+b.dataset.t).classList.add('act');if(sheet.className=='min')setSnap('');(TABS[b.dataset.t]||(()=>{}))()});
-const TABS={};window.APPV='3.6';const toast=(t,ms=2500,fn)=>{const e=$('toast');e.textContent=t;e.style.display='block';e.onclick=fn||null;clearTimeout(e._t);if(ms)e._t=setTimeout(()=>e.style.display='none',ms)};
+const TABS={};window.APPV='3.7';const toast=(t,ms=2500,fn)=>{const e=$('toast');e.textContent=t;e.style.display='block';e.onclick=fn||null;clearTimeout(e._t);if(ms)e._t=setTimeout(()=>e.style.display='none',ms)};
 // ---------- map ----------
 const T=new Set(TK);
 const map=L.map('map',{zoomControl:false,preferCanvas:true,minZoom:6,maxZoom:18,maxBounds:[[3,113],[23,130]],attributionControl:true});
@@ -341,7 +341,7 @@ function openPinForm(ll){const name=prompt('Pin name','My spot');if(name===null)
 function loadOptsUI(){const S=getSettings();$('oBeach').checked=!!S.access.beach;$('oShore').checked=!!S.access.shore;$('oBoat').checked=!!S.access.boat;$('oSwim').value=S.maxSwim;$('oSwimV').textContent=S.maxSwim+' m';$('oUnits').value=S.units||'m'}
 function saveOpts(){const S=getSettings();S.access={beach:$('oBeach').checked,shore:$('oShore').checked,boat:$('oBoat').checked};S.maxSwim=+$('oSwim').value;S.units=$('oUnits').value;S.hideMpa=true;setSettings(S);$('oSwimV').textContent=S.maxSwim+' m';$('oMsg').textContent='Saved.';AUTO=[];checkSpots();buildSpots()}
 ['oBeach','oShore','oBoat','oUnits'].forEach(id=>$(id).onchange=saveOpts);$('oSwim').oninput=()=>{$('oSwimV').textContent=$('oSwim').value+' m'};$('oSwim').onchange=saveOpts;
-TABS.opts=()=>loadOptsUI();
+TABS.opts=()=>{loadOptsUI();try{updateAuthUI()}catch(e){}};
 $('oEx').onclick=()=>{const data={v:1,exported_at:nowIso(),settings:getSettings(),favs:LS.get(FAV_KEY,[]),pins:LS.get(PIN_KEY,[]),log:LS.get('anda_log',[]),track:LS.get('anda_track',[])};
  share('spearfishing-backup.json','application/json',JSON.stringify(data,null,1))};
 $('oIm').onclick=()=>$('oFile').click();
@@ -352,7 +352,7 @@ $('oFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d
   LOG=LS.get('anda_log',[]);trk=LS.get('anda_track',[]);trkLine.setLatLngs(trk.map(p=>[p[0],p[1]]));renderLog();drawPins();renderFavs();loadOptsUI();checkSpots();$('oMsg').textContent='Import OK ('+(data.favs||[]).length+' favs, '+(data.pins||[]).length+' pins).'}catch(err){$('oMsg').textContent='Import failed: '+err.message}e.target.value=''};
 drawPins();
 
-const APPV=window.APPV||'3.6';$('off').insertAdjacentHTML('afterend','<p class="note">App version '+APPV+'</p>');
+const APPV=window.APPV||'3.7';$('off').insertAdjacentHTML('afterend','<p class="note">App version '+APPV+'</p>');
 let REG=null,reloading=false,updShown=false;
 function doReload(){if(reloading)return;reloading=true;location.reload()}
 function showUpdate(){if(updShown)return;updShown=true;toast('⬆️ Update available — tap to reload',0,async()=>{toast('Updating…',0);setTimeout(doReload,3000);
@@ -372,4 +372,4 @@ function summary(){const ll=me?L.latLng(me):map.getCenter(),tn=tideAt(ll,new Dat
  let mp='MPA –';if(me){const st=zoneStatus(me);mp=st.inside.length?'INSIDE MPA':st.near?'MPA '+fmtD(st.near.d)+' '+card(bearing(me,st.near.bp)):'No MPA within 30 km'}else mp='Tap ◎ for GPS';
  $('sum').textContent=mp+(tn?' · tide '+(tn.h>=0?'+':'')+tn.h.toFixed(2)+' m (MSL)':'')+(lo?' · next low '+hm(lo.t)+' ('+(lo.h>=0?'+':'')+lo.h.toFixed(2)+')':'')}
 setInterval(summary,60000);setTimeout(summary,1500);
-window.__ok=true;
+try{initSB()}catch(e){console.warn("sb",e)}window.__ok=true;
