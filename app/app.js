@@ -10,17 +10,24 @@ const hav=(a,b)=>{const p=(b[0]-a[0])*D2R,l=(b[1]-a[1])*D2R,h=Math.sin(p/2)**2+M
 let previewH=0;const tNow=()=>new Date(Date.now()+previewH*3600e3);
 // ---------- sheet / tabs ----------
 const sheet=$('sheet'),shead=$('shead');L.DomEvent.disableClickPropagation(sheet);L.DomEvent.disableScrollPropagation(sheet);
-const snapH=()=>{const v=innerHeight;return{min:84,'':v*.45,big:v*.88}};
-function setSnap(c){sheet.style.height='';sheet.className=c;setTimeout(()=>map.invalidateSize(),300)}
-let dg=null;
-shead.addEventListener('touchstart',e=>{const t=e.touches[0];dg={y:t.clientY,h:sheet.getBoundingClientRect().height,moved:false,hist:[[t.clientY,e.timeStamp]]}},{passive:true});
-shead.addEventListener('touchmove',e=>{if(!dg)return;const t=e.touches[0],dy=dg.y-t.clientY;if(!dg.moved&&Math.abs(dy)<6)return;dg.moved=true;e.preventDefault();sheet.classList.add('drag');
- const H=snapH();sheet.style.height=Math.max(H.min,Math.min(H.big,dg.h+dy))+'px';dg.hist.push([t.clientY,e.timeStamp]);if(dg.hist.length>5)dg.hist.shift()},{passive:false});
-shead.addEventListener('touchend',e=>{if(!dg)return;const d=dg;dg=null;sheet.classList.remove('drag');if(!d.moved)return;e.preventDefault();
- const h=sheet.getBoundingClientRect().height,H=snapH(),a=d.hist[0],b=d.hist[d.hist.length-1],v=(a[0]-b[0])/Math.max(1,b[1]-a[1]);// px/ms, + = up
- const order=['min','','big'];let c;if(Math.abs(v)>.5){const cur=order.reduce((p,k)=>Math.abs(H[k]-h)<Math.abs(H[p]-h)?k:p,'min');let i=order.indexOf(cur);if(v>0&&H[cur]<=h)i++;if(v<0&&H[cur]>=h)i--;c=order[Math.max(0,Math.min(2,i))]}
- else c=order.reduce((p,k)=>Math.abs(H[k]-h)<Math.abs(H[p]-h)?k:p,'min');setSnap(c)},{passive:false});
-shead.addEventListener('touchcancel',()=>{if(dg){dg=null;sheet.classList.remove('drag');setSnap(sheet.className)}});
+const sab=()=>{const p=document.createElement('div');p.style.cssText='position:fixed;padding-bottom:env(safe-area-inset-bottom);visibility:hidden';document.body.appendChild(p);const v=parseFloat(getComputedStyle(p).paddingBottom)||0;p.remove();return v};
+const snapH=()=>{const v=innerHeight,tb=$('top').getBoundingClientRect().bottom,sb=sab(),min=84+sb,big=Math.max(min+100,v-tb-12);return{min,'':Math.min(Math.max(v*.45,min+120),big),big}};
+function setSnap(c){const H=snapH();sheet.className=c;sheet.style.height=H[c]+'px';setTimeout(()=>map.invalidateSize(),300)}
+addEventListener('resize',()=>setSnap(sheet.className));
+let dg=null;const sbody=$('body');
+function dStart(e,fromBody){const t=e.touches[0];dg={y:t.clientY,h:sheet.getBoundingClientRect().height,moved:false,body:fromBody,hist:[[t.clientY,e.timeStamp]]}}
+function dMove(e){if(!dg)return;const t=e.touches[0],dy=dg.y-t.clientY;
+ if(dg.body&&!dg.moved){if(Math.abs(dy)<8)return;if(dy>0||sbody.scrollTop>0){dg=null;return}}// content: only a downward swipe at scrollTop 0 drags the sheet
+ if(!dg.moved&&Math.abs(dy)<6)return;dg.moved=true;e.preventDefault();sheet.classList.add('drag');
+ const H=snapH();let h=dg.h+dy;if(h>H.big)h=H.big+(h-H.big)*.25;if(h<H.min)h=H.min-(H.min-h)*.25;sheet.style.height=h+'px';dg.hist.push([t.clientY,e.timeStamp]);if(dg.hist.length>5)dg.hist.shift()}
+function dEnd(e){if(!dg)return;const d=dg;dg=null;sheet.classList.remove('drag');if(!d.moved)return;e.preventDefault();
+ const h=sheet.getBoundingClientRect().height,H=snapH(),a=d.hist[0],b=d.hist[d.hist.length-1],v=(a[0]-b[0])/Math.max(1,b[1]-a[1]);
+ const order=['min','','big'];let c;if(d.body&&h<H[sheet.className]-30)c='min';else if(Math.abs(v)>.5){const cur=order.reduce((p,k)=>Math.abs(H[k]-h)<Math.abs(H[p]-h)?k:p,'min');let i=order.indexOf(cur);if(v>0&&H[cur]<=h)i++;if(v<0&&H[cur]>=h)i--;c=order[Math.max(0,Math.min(2,i))]}
+ else c=order.reduce((p,k)=>Math.abs(H[k]-h)<Math.abs(H[p]-h)?k:p,'min');setSnap(c)}
+shead.addEventListener('touchstart',e=>dStart(e,false),{passive:true});sbody.addEventListener('touchstart',e=>dStart(e,true),{passive:true});
+[shead,sbody].forEach(el=>{el.addEventListener('touchmove',dMove,{passive:false});el.addEventListener('touchend',dEnd,{passive:false});el.addEventListener('touchcancel',()=>{if(dg){dg=null;sheet.classList.remove('drag');setSnap(sheet.className)}})});
+$('shx').onclick=e=>{e.stopPropagation();setSnap(sheet.className=='min'?'':'min')};
+setTimeout(()=>setSnap(''),0);
 $('grab').onclick=()=>setSnap(sheet.className=='min'?'':sheet.className==''?'big':'min');
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{if(b.classList.contains('act')&&sheet.className!='min'){setSnap('min');return}document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+b.dataset.t).classList.add('act');if(sheet.className=='min')setSnap('');(TABS[b.dataset.t]||(()=>{}))()});
 const TABS={};const toast=(t,ms=2500,fn)=>{const e=$('toast');e.textContent=t;e.style.display='block';e.onclick=fn||null;clearTimeout(e._t);if(ms)e._t=setTimeout(()=>e.style.display='none',ms)};
@@ -256,10 +263,21 @@ $('zT').onclick=()=>{map.fitBounds([[16.296,120.008],[16.318,120.035]]);setSnap(
 map.on('zoomend',()=>document.body.classList.toggle('lowz',map.getZoom()<12));map.fitBounds([[16.296,120.008],[16.318,120.035]]);
 setInterval(()=>{if(!previewH&&$('p-tide').classList.contains('act'))TABS.tide();if(me)updateNav()},60000);
 // ---------- service worker + update toast ----------
-if('serviceWorker' in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>{$('off').textContent='Offline copy: saving…';
- navigator.serviceWorker.ready.then(()=>$('off').textContent='Offline copy ready.');
- r.addEventListener('updatefound',()=>{const n=r.installing;n&&n.addEventListener('statechange',()=>{if(n.state=='installed'&&navigator.serviceWorker.controller)toast('Update available — tap to reload',0,()=>{n.postMessage('skip')})})});setInterval(()=>r.update(),3600e3)}).catch(()=>{});
- navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
+const APPV='3.4';$('off').insertAdjacentHTML('afterend','<p class="note">App version '+APPV+'</p>');
+let REG=null,reloading=false,updShown=false;
+function doReload(){if(reloading)return;reloading=true;location.reload()}
+function showUpdate(){if(updShown)return;updShown=true;toast('⬆️ Update available — tap to reload',0,async()=>{toast('Updating…',0);setTimeout(doReload,3000);
+ try{const r=REG||await navigator.serviceWorker.getRegistration();if(r&&r.waiting){r.waiting.postMessage('skip');return}if(r){await r.update();if(r.waiting){r.waiting.postMessage('skip');return}if(r.installing)return}}catch(e){}doReload()})}
+function watchReg(r){const chk=w=>{if(!w)return;if(w.state=='installed'&&navigator.serviceWorker.controller)showUpdate();w.addEventListener('statechange',()=>{if(w.state=='installed'&&navigator.serviceWorker.controller)showUpdate()})};
+ chk(r.waiting);chk(r.installing);r.addEventListener('updatefound',()=>chk(r.installing))}
+async function checkUpdate(){try{if(REG)await REG.update()}catch(e){}
+ try{const v=await (await fetch('version.json?t='+Date.now(),{cache:'no-store'})).json();if(v.v&&v.v!==APPV){if(REG){try{await REG.update()}catch(e){}}showUpdate()}}catch(e){}}
+if('serviceWorker' in navigator){const had=!!navigator.serviceWorker.controller;
+ navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>{REG=r;$('off').textContent='Offline copy: saving…';navigator.serviceWorker.ready.then(()=>$('off').textContent='Offline copy ready.');watchReg(r);checkUpdate()}).catch(()=>{});
+ navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)doReload()})}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState=='visible')checkUpdate()});
+addEventListener('pageshow',()=>checkUpdate());addEventListener('online',()=>checkUpdate());
+setInterval(()=>{if(document.visibilityState=='visible')checkUpdate()},300000);
 function summary(){const ll=me?L.latLng(me):map.getCenter(),tn=tideAt(ll,new Date());let lo=null;if(tn){const ex=extremes(ll,new Date(),26);lo=ex.find(x=>x.k=='L')}
  if(tn)$('ttop').textContent='Tide '+(tn.h>=0?'+':'')+tn.h.toFixed(1)+' m'+(lo?' · low '+hm(lo.t):'');
  let mp='MPA –';if(me){const st=zoneStatus(me);mp=st.inside.length?'INSIDE MPA':st.near?'MPA '+fmtD(st.near.d)+' '+card(bearing(me,st.near.bp)):'No MPA within 30 km'}else mp='Tap ◎ for GPS';
