@@ -9,8 +9,20 @@ const card=b=>['N','NE','E','SE','S','SW','W','NW'][Math.round(b/45)%8];
 const hav=(a,b)=>{const p=(b[0]-a[0])*D2R,l=(b[1]-a[1])*D2R,h=Math.sin(p/2)**2+Math.cos(a[0]*D2R)*Math.cos(b[0]*D2R)*Math.sin(l/2)**2;return 12742000*Math.asin(Math.sqrt(h))};
 let previewH=0;const tNow=()=>new Date(Date.now()+previewH*3600e3);
 // ---------- sheet / tabs ----------
-const sheet=$('sheet');$('grab').onclick=()=>{sheet.className=sheet.className=='big'?'min':sheet.className=='min'?'':'big';setTimeout(()=>map.invalidateSize(),250)};
-document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+b.dataset.t).classList.add('act');if(sheet.className=='min'||sheet.className=='')sheet.className='big';(TABS[b.dataset.t]||(()=>{}))()});
+const sheet=$('sheet'),shead=$('shead');L.DomEvent.disableClickPropagation(sheet);L.DomEvent.disableScrollPropagation(sheet);
+const snapH=()=>{const v=innerHeight;return{min:62,'':v*.45,big:v*.88}};
+function setSnap(c){sheet.style.height='';sheet.className=c;setTimeout(()=>map.invalidateSize(),300)}
+let dg=null;
+shead.addEventListener('touchstart',e=>{const t=e.touches[0];dg={y:t.clientY,h:sheet.getBoundingClientRect().height,moved:false,hist:[[t.clientY,e.timeStamp]]}},{passive:true});
+shead.addEventListener('touchmove',e=>{if(!dg)return;const t=e.touches[0],dy=dg.y-t.clientY;if(!dg.moved&&Math.abs(dy)<6)return;dg.moved=true;e.preventDefault();sheet.classList.add('drag');
+ const H=snapH();sheet.style.height=Math.max(H.min,Math.min(H.big,dg.h+dy))+'px';dg.hist.push([t.clientY,e.timeStamp]);if(dg.hist.length>5)dg.hist.shift()},{passive:false});
+shead.addEventListener('touchend',e=>{if(!dg)return;const d=dg;dg=null;sheet.classList.remove('drag');if(!d.moved)return;e.preventDefault();
+ const h=sheet.getBoundingClientRect().height,H=snapH(),a=d.hist[0],b=d.hist[d.hist.length-1],v=(a[0]-b[0])/Math.max(1,b[1]-a[1]);// px/ms, + = up
+ const order=['min','','big'];let c;if(Math.abs(v)>.5){const cur=order.reduce((p,k)=>Math.abs(H[k]-h)<Math.abs(H[p]-h)?k:p,'min');let i=order.indexOf(cur);if(v>0&&H[cur]<=h)i++;if(v<0&&H[cur]>=h)i--;c=order[Math.max(0,Math.min(2,i))]}
+ else c=order.reduce((p,k)=>Math.abs(H[k]-h)<Math.abs(H[p]-h)?k:p,'min');setSnap(c)},{passive:false});
+shead.addEventListener('touchcancel',()=>{if(dg){dg=null;sheet.classList.remove('drag');setSnap(sheet.className)}});
+$('grab').onclick=()=>setSnap(sheet.className=='min'?'':sheet.className==''?'big':'min');
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{if(b.classList.contains('act')&&sheet.className!='min'){setSnap('min');return}document.querySelectorAll('#tabs button,.pane').forEach(x=>x.classList.remove('act'));b.classList.add('act');$('p-'+b.dataset.t).classList.add('act');if(sheet.className=='min')setSnap('');(TABS[b.dataset.t]||(()=>{}))()});
 const TABS={};const toast=(t,ms=2500,fn)=>{const e=$('toast');e.textContent=t;e.style.display='block';e.onclick=fn||null;clearTimeout(e._t);if(ms)e._t=setTimeout(()=>e.style.display='none',ms)};
 // ---------- map ----------
 const T=new Set(TK);
@@ -153,12 +165,12 @@ let LOG=LS.get('anda_log',[]),pend=null;
 $('fS').innerHTML='<option value="">(no catch / spot only)</option>'+FISH.filter(f=>f.f!='no').map(f=>`<option>${esc(f.n)}</option>`).join('');
 function openForm(ll){pend=ll;$('form').style.display='block';$('fC').textContent=ll[0].toFixed(5)+', '+ll[1].toFixed(5);$('fN').value='';$('fT').value='';$('fS').value='';document.querySelector('[data-t=log]').click()}
 $('addMe').onclick=()=>{if(!me){startGPS();toast('Waiting for GPS…');return}openForm(me)};
-$('addTap').onclick=()=>{mode='log';$('addTap').classList.add('on');sheet.className='min';toast('Tap the map where the spot is')};
+$('addTap').onclick=()=>{mode='log';$('addTap').classList.add('on');setSnap('min');toast('Tap the map where the spot is')};
 $('fX').onclick=()=>{$('form').style.display='none';pend=null};
 $('fOk').onclick=()=>{if(!pend)return;LOG.push({n:$('fN').value||'Spot',s:$('fS').value,t:$('fT').value,ll:pend,ts:Date.now()});LS.set('anda_log',LOG);$('form').style.display='none';pend=null;renderLog()};
 function renderLog(){G.log.clearLayers();$('logL').innerHTML=LOG.length?LOG.map((e,i)=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid #22384a;padding:4px 0"><span>${e.s?'🐟':'📍'} <b>${esc(e.n)}</b> ${e.s?esc(e.s):''}<br><span class="note">${new Date(e.ts).toLocaleString('en-GB')} · ${esc(e.t)}</span></span><span><button class="btn" data-g="${i}">Go</button> <button class="btn r" data-x="${i}">✕</button></span></div>`).join(''):'Nothing saved yet.';
  LOG.forEach(e=>L.marker(e.ll,{icon:pinI(e.s?'#f59e0b':'#06b6d4')}).bindPopup(`<b>${esc(e.n)}</b><br>${esc(e.s||'')}<br>${esc(e.t)}<br>${new Date(e.ts).toLocaleString('en-GB')}`).addTo(G.log));
- $('logL').querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{map.setView(LOG[b.dataset.g].ll,17);sheet.className=''});
+ $('logL').querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{map.setView(LOG[b.dataset.g].ll,17);setSnap('')});
  $('logL').querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>{if(confirm('Delete?')){LOG.splice(+b.dataset.x,1);LS.set('anda_log',LOG);renderLog()}})}
 renderLog();
 async function share(name,type,text){const f=new File([text],name,{type});try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:name});return}}catch(e){if(e.name=='AbortError')return}
@@ -198,7 +210,7 @@ function buildSpots(){if(!SPOTS.length||!GRID||!NAT)return;if(!AUTO.length)build
   if(w){sc+=w.ws<15?2:w.ws<25?0:-3;if(w.wh!=null)sc+=w.wh<.5?2:w.wh<1?0:-3;if(s.land!=null){const on=Math.abs(((w.wd-(s.land+180))+540)%360-180)<60;if(on)sc-=1}wtxt=`wind ${Math.round(w.ws)} km/h ${card(w.wd)}${w.wh!=null?', waves '+w.wh.toFixed(1)+' m':''}`}
   const d=hav(from,s.ll);sc-=Math.log10(Math.max(d,1000)/1000)*2;return{s,sc,d,t,wtxt}}).sort((a,b)=>b.sc-a.sc).slice(0,12);
  $('best').innerHTML=all.map(x=>`<div class="row" style="justify-content:space-between;flex-wrap:nowrap;border-bottom:1px solid #22384a;padding:5px 0"><span style="flex:1"><b>${esc(x.s.n)}</b> <span class="note">${esc(x.s.area||x.s.reg||'')}</span><br><span class="note">${fmtD(x.d)} away · tide ${x.t?'<span style="color:#4ade80">good</span>':'not ideal'} · ${x.wtxt}</span></span><button class="btn" data-ll="${x.s.ll}">Show</button></div>`).join('');
- $('best').querySelectorAll('[data-ll]').forEach(b=>b.onclick=()=>{map.setView(b.dataset.ll.split(',').map(Number),15);sheet.className=''})}
+ $('best').querySelectorAll('[data-ll]').forEach(b=>b.onclick=()=>{map.setView(b.dataset.ll.split(',').map(Number),15);setSnap('')})}
 TABS.spots=()=>buildSpots();
 // ---------- areas (offline download) ----------
 const lon2x=(lo,z)=>Math.floor((lo+180)/360*2**z),lat2y=(la,z)=>Math.floor((1-Math.log(Math.tan(la*D2R)+1/Math.cos(la*D2R))/Math.PI)/2*2**z);
@@ -207,7 +219,7 @@ const zmaxFor=b=>tileList(b,17).length<4000?17:16,mb=n=>(n*16/1024).toFixed(0);
 let DL=LS.get('areas',{}),busy=false;
 function renderAreas(){$('preL').innerHTML=PRE.map(([k,n,a,b,c,d])=>{const bb=[a,b,c,d],z=zmaxFor(bb),n2=tileList(bb,z).length;return`<div class="row" style="justify-content:space-between;border-bottom:1px solid #22384a;padding:5px 0"><span><b>${esc(n)}</b><br><span class="note">z10–${z} · ${n2} tiles · ~${mb(n2)} MB${k=='anda'?' · core already bundled':''}${DL[k]?' · <span style="color:#4ade80">downloaded</span>':''}</span></span><span><button class="btn" data-v="${k}">View</button> ${DL[k]?`<button class="btn r" data-del="${k}">Delete</button>`:`<button class="btn p" data-dl="${k}">Download</button>`}</span></div>`}).join('');
  const cust=Object.entries(DL).filter(([k])=>k.startsWith('c'));$('custL').innerHTML=cust.map(([k,v])=>`<div class="row" style="justify-content:space-between"><span>${esc(v.name)} · ${v.n} tiles</span><span><button class="btn" data-v="${k}">View</button> <button class="btn r" data-del="${k}">Delete</button></span></div>`).join('')||'<span class="note">None.</span>';
- document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{const p=PRE.find(x=>x[0]==b.dataset.v),bb=p?p.slice(2):DL[b.dataset.v].b;map.fitBounds([[bb[0],bb[1]],[bb[2],bb[3]]]);sheet.className=''});
+ document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{const p=PRE.find(x=>x[0]==b.dataset.v),bb=p?p.slice(2):DL[b.dataset.v].b;map.fitBounds([[bb[0],bb[1]],[bb[2],bb[3]]]);setSnap('')});
  document.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>{const p=PRE.find(x=>x[0]==b.dataset.dl);download(p[0],p[1],p.slice(2))});
  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delArea(b.dataset.del))}
 async function download(key,name,b){if(busy)return toast('A download is already running');const z=zmaxFor(b),L1=tileList(b,z);if(L1.length*16/1024>150&&!confirm(`About ${mb(L1.length)} MB. That is large. Continue?`))return;
@@ -220,11 +232,11 @@ async function delArea(k){if(!confirm('Delete offline tiles for '+DL[k].name+'?'
  Object.entries(DL).forEach(([kk,v])=>{if(kk!=k)tileList(v.b,zmaxFor(v.b)).forEach(t=>keepOther.add(ESRI(...t)))});
  for(const t of tileList(DL[k].b,zmaxFor(DL[k].b))){const u=ESRI(...t);if(!keepOther.has(u))await cache.delete(u)}delete DL[k];LS.set('areas',DL);renderAreas();toast('Deleted')}
 let rect=null,drawing=false,p0=null;
-$('drawR').onclick=()=>{drawing=true;sheet.className='min';toast('Drag on the map to draw a rectangle',4000);map.dragging.disable()};
+$('drawR').onclick=()=>{drawing=true;setSnap('min');toast('Drag on the map to draw a rectangle',4000);map.dragging.disable()};
 map.on('mousedown',e=>{if(!drawing)return;p0=e.latlng;rect&&map.removeLayer(rect);rect=L.rectangle([p0,p0],{color:'#facc15'}).addTo(map)});
 map.on('mousemove',e=>{if(drawing&&p0)rect.setBounds([p0,e.latlng])});
 map.on('mouseup',e=>{if(!drawing||!p0)return;drawing=false;map.dragging.enable();const bb=rect.getBounds(),b=[bb.getSouth(),bb.getWest(),bb.getNorth(),bb.getEast()];p0=null;const z=zmaxFor(b),n=tileList(b,z).length;
- sheet.className='big';document.querySelector('[data-t=areas]').click();$('custQ').innerHTML=`Selected area: ${n} tiles (z10–${z}), ~${mb(n)} MB${n*16/1024>150?' <b style="color:#fbbf24">large!</b>':''} <button class="btn p" id="custGo">Download</button>`;
+ setSnap('');document.querySelector('[data-t=areas]').click();$('custQ').innerHTML=`Selected area: ${n} tiles (z10–${z}), ~${mb(n)} MB${n*16/1024>150?' <b style="color:#fbbf24">large!</b>':''} <button class="btn p" id="custGo">Download</button>`;
  $('custGo').onclick=()=>{map.removeLayer(rect);download('c'+Date.now(),'Custom '+b.map(x=>x.toFixed(2)).join(','),b)}});
 async function fetchWx(key,ll){try{const q=`latitude=${ll[0].toFixed(3)}&longitude=${ll[1].toFixed(3)}&timezone=Asia%2FManila&forecast_days=7`;
  const [h,m]=await Promise.all([fetch('https://api.open-meteo.com/v1/forecast?'+q+'&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation').then(r=>r.json()),fetch('https://marine-api.open-meteo.com/v1/marine?'+q+'&hourly=wave_height,swell_wave_height,swell_wave_direction,swell_wave_period').then(r=>r.json()).catch(()=>null)]);
@@ -241,7 +253,7 @@ $('mpaT').innerHTML='<tr><th>Anda area</th><th>ha</th><th>Boundary</th></tr>'+D.
 const LAY=[['MPAs (Anda)','mpa'],['Estimated (Anda)','est'],['MPAs (national)','nat'],['Spots','spots'],['Suggested zones','zones'],['Depth lines','depth'],['My log','log'],['Swim track','track']];
 $('lay').onclick=()=>{const h='<b>Layers</b><br>'+LAY.map(([n,k])=>`<label style="display:block;padding:4px 0"><input type="checkbox" style="width:auto" data-k="${k}" ${map.hasLayer(G[k])?'checked':''}> ${n}</label>`).join('');const p=L.popup().setLatLng(map.getCenter()).setContent(h).openOn(map);
  p.getElement().querySelectorAll('input').forEach(i=>i.onchange=()=>{const g=G[i.dataset.k];i.checked?g.addTo(map):map.removeLayer(g);if(i.dataset.k=='depth'){i.checked?(G.dlab.addTo(map),drawDepth()):map.removeLayer(G.dlab)}})};
-$('zT').onclick=()=>{map.fitBounds([[16.296,120.008],[16.318,120.035]]);sheet.className=''};$('zA').onclick=()=>{map.fitBounds([[16.255,119.94],[16.40,120.07]]);sheet.className=''};$('zP').onclick=()=>{map.fitBounds([[4.5,116.5],[21,127]]);sheet.className=''};
+$('zT').onclick=()=>{map.fitBounds([[16.296,120.008],[16.318,120.035]]);setSnap('')};$('zA').onclick=()=>{map.fitBounds([[16.255,119.94],[16.40,120.07]]);setSnap('')};$('zP').onclick=()=>{map.fitBounds([[4.5,116.5],[21,127]]);setSnap('')};
 map.on('zoomend',()=>document.body.classList.toggle('lowz',map.getZoom()<12));map.fitBounds([[16.296,120.008],[16.318,120.035]]);
 setInterval(()=>{if(!previewH&&$('p-tide').classList.contains('act'))TABS.tide();if(me)updateNav()},60000);
 // ---------- service worker + update toast ----------
